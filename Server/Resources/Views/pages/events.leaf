@@ -1,0 +1,26 @@
+#extend("layouts/base"):
+#export("body"):
+<div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-semibold">Upcoming events</h1>
+    #if(isSignedIn):
+    <a href="/events/new" class="bg-gray-900 text-white text-sm px-4 py-2 rounded-md hover:bg-gray-700">Host an event</a>
+    #endif
+</div>
+
+<div class="grid gap-4">
+    #for(event in events):
+    <a href="/events/#(event.id)" class="block bg-white border border-gray-200 rounded-lg p-4 hover:border-gray-400">
+        <div class="flex items-center justify-between">
+            <h2 class="font-medium">#(event.title)</h2>
+            <span class="text-xs uppercase tracking-wide text-gray-500">#(event.category)</span>
+        </div>
+        <p class="text-sm text-gray-500 mt-1">#(event.cityAddress) — hosted by #(event.hostDisplayName)</p>
+        <p class="text-sm text-gray-400 mt-1">#(event.attendeeCount) attending</p>
+    </a>
+    #endfor
+    #if(count(events) == 0):
+    <p class="text-gray-500 text-sm">No events match these filters yet.</p>
+    #endif
+</div>
+#endexport
+#endextend

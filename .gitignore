@@ -1,0 +1,20 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+*.xcodeproj
+Package.resolved
+
+# Vapor
+Server/.env
+Server/Public/css/*.css
+!Server/Public/css/.gitkeep
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log

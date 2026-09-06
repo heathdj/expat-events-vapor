@@ -1,0 +1,62 @@
+#extend("layouts/base"):
+#export("body"):
+<div class="max-w-sm mx-auto mt-16 bg-white rounded-lg border border-gray-200 p-8 text-center">
+    <h1 class="text-xl font-semibold mb-2">Sign in to ExpatEvents</h1>
+    <p class="text-sm text-gray-500 mb-6">No password needed — sign in with Apple or Google.</p>
+
+    <div id="auth-error" class="hidden text-sm text-red-600 mb-4"></div>
+
+    #if(appleClientID):
+    <!-- Sign in with Apple JS SDK — see https://developer.apple.com/documentation/sign_in_with_apple/sign_in_with_apple_js -->
+    <script type="text/javascript" src="https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js"></script>
+    <div id="appleid-signin" class="mb-3" data-color="black" data-border="true" data-type="continue"></div>
+    <script>
+        document.addEventListener('AppleIDSignInOnSuccess', async (event) => {
+            const identityToken = event.detail.authorization.id_token;
+            const res = await fetch('/login/apple', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ identityToken })
+            });
+            if (res.redirected) { window.location = res.url; }
+            else { document.getElementById('auth-error').textContent = 'Sign-in failed.'; document.getElementById('auth-error').classList.remove('hidden'); }
+        });
+        window.AppleID && window.AppleID.auth.init({
+            clientId: '#(appleClientID)',
+            scope: 'name email',
+            redirectURI: window.location.origin + '/login',
+            usePopup: true
+        });
+    </script>
+    #endif
+
+    #if(googleClientID):
+    <!-- Google Identity Services — see https://developers.google.com/identity/gsi/web -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <div id="g_id_onload"
+         data-client_id="#(googleClientID)"
+         data-callback="handleGoogleCredential">
+    </div>
+    <div class="g_id_signin" data-type="standard"></div>
+    <script>
+        async function handleGoogleCredential(response) {
+            const res = await fetch('/login/google', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ idToken: response.credential })
+            });
+            if (res.redirected) { window.location = res.url; }
+            else { document.getElementById('auth-error').textContent = 'Sign-in failed.'; document.getElementById('auth-error').classList.remove('hidden'); }
+        }
+    </script>
+    #endif
+
+    #if(!appleClientID && !googleClientID):
+    <p class="text-sm text-amber-600">
+        Sign-in isn't configured yet — set <code>APPLE_CLIENT_ID</code> and/or
+        <code>GOOGLE_CLIENT_ID</code> (see <code>.env.example</code>).
+    </p>
+    #endif
+</div>
+#endexport
+#endextend

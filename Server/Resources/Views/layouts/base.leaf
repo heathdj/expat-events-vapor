@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>#(title) — ExpatEvents</title>
+    <!--
+      NOTE: this MVP scaffold loads Tailwind/htmx/Alpine from CDNs for
+      speed of setup. Architecture §2/§15 calls for Tailwind compiled at
+      build time via the CLI and htmx/Alpine/Flowbite vendored into
+      /Public — swap these <script> tags for the compiled build before
+      shipping past the MVP scaffold stage.
+    -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen flex flex-col">
+    <nav class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        <a href="/" class="font-semibold text-lg">ExpatEvents</a>
+        <div class="flex items-center gap-4 text-sm">
+            <a href="/events" class="hover:underline">Events</a>
+            #if(isSignedIn):
+            <form method="post" action="/logout" class="inline">
+                <button type="submit" class="hover:underline">Sign out</button>
+            </form>
+            #else:
+            <a href="/login" class="hover:underline">Sign in</a>
+            #endif
+        </div>
+    </nav>
+    <main class="flex-1 max-w-5xl w-full mx-auto px-4 py-8">
+        #import("body")
+    </main>
+</body>
+</html>
