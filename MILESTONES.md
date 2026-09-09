@@ -24,7 +24,7 @@ Legend: ✅ built (not yet compiler-verified — see AGENTS.md "step zero") · �
 - Bearer token (API) via `UserJWTPayload` + `UserBearerAuthenticator`; `POST /api/v1/auth/apple`/`/google` → `GET /api/v1/me`. ✅
 - Invalid/expired provider token → structured 401 via `APIErrorMiddleware`, never a 500. ✅ (untested against real tokens)
 - Sign-out invalidates the web session (`/logout`). ✅
-- **Not yet done**: end-to-end verification against real Apple/Google sandbox credentials (needs the prerequisites in AGENTS.md); the Sign in with Apple JS / Google Identity Services front-end wiring in `login.leaf` is written but unexercised.
+- **Not yet done**: end-to-end verification against real Apple/Google sandbox credentials (needs the prerequisites in AGENTS.md); the Sign in with Apple JS / Google Identity Services front-end wiring in `login.leaf` is written but unexercised. PR #2's independent review also flagged: no unit test exists yet for `AppleIdentityTokenVerifier`/`GoogleIdentityTokenVerifier` (e.g. a mismatched-issuer token correctly throwing `.invalidProviderToken`) — add one as part of this milestone's own verification pass, given it's security-relevant logic.
 
 ## M3 — Passkeys — ⬜ not started (stretch milestone; escape hatch applies)
 

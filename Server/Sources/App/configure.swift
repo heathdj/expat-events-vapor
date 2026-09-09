@@ -35,7 +35,11 @@ private func configureDatabase(_ app: Application) throws {
     } else {
         app.databases.use(.postgres(
             hostname: Environment.get("DATABASE_HOST") ?? "localhost",
-            port: Environment.get("DATABASE_PORT").flatMap(Int.init) ?? 5432,
+            // 5433, not Postgres's usual 5432 — matches docker-compose.yml's
+            // host port mapping (see its comment for why) and .env.example.
+            // This fallback only bites when DATABASE_PORT is unset AND no
+            // .env is present at all; keep it in sync with those two.
+            port: Environment.get("DATABASE_PORT").flatMap(Int.init) ?? 5433,
             username: Environment.get("DATABASE_USERNAME") ?? "vapor_username",
             password: Environment.get("DATABASE_PASSWORD") ?? "vapor_password",
             database: Environment.get("DATABASE_NAME") ?? "expatevents"
