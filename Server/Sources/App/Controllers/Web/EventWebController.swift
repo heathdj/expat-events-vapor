@@ -124,6 +124,7 @@ struct EventWebController: RouteCollection {
             let event = try await service.createEvent(request, hostUserID: try user.requireID())
             return req.redirect(to: "/events/\(try event.requireID())")
         } catch let error as APIError {
+            req.logger.notice("Event creation rejected: \(error.code) — \(error.message)")
             let view = try await req.view.render("pages/event-form", NewEventPageContext())
             return try await view.encodeResponse(status: .badRequest, for: req)
         }

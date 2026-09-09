@@ -12,7 +12,7 @@ import ExpatEventsAPI
 /// out before it can be dropped).
 struct CreateUserRoleEnum: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.enum("user_role")
+        _ = try await database.enum("user_role")
             .case(UserRole.member.rawValue)
             .case(UserRole.admin.rawValue)
             .create()
@@ -24,7 +24,7 @@ struct CreateUserRoleEnum: AsyncMigration {
 
 struct CreateIdentityProviderEnum: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.enum("identity_provider")
+        _ = try await database.enum("identity_provider")
             .case(IdentityProvider.apple.rawValue)
             .case(IdentityProvider.google.rawValue)
             .create()
@@ -36,7 +36,7 @@ struct CreateIdentityProviderEnum: AsyncMigration {
 
 struct CreatePlanTierEnum: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.enum("plan_tier")
+        _ = try await database.enum("plan_tier")
             .case(PlanTier.free.rawValue)
             .case(PlanTier.premium.rawValue)
             .create()
@@ -48,7 +48,7 @@ struct CreatePlanTierEnum: AsyncMigration {
 
 struct CreateBillingCycleEnum: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.enum("billing_cycle")
+        _ = try await database.enum("billing_cycle")
             .case(BillingCycle.monthly.rawValue)
             .case(BillingCycle.yearly.rawValue)
             .create()
@@ -60,7 +60,7 @@ struct CreateBillingCycleEnum: AsyncMigration {
 
 struct CreateSubscriptionStatusEnum: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.enum("subscription_status")
+        _ = try await database.enum("subscription_status")
             .case(SubscriptionStatus.active.rawValue)
             .case(SubscriptionStatus.pastDue.rawValue)
             .case(SubscriptionStatus.canceled.rawValue)
@@ -73,7 +73,7 @@ struct CreateSubscriptionStatusEnum: AsyncMigration {
 
 struct CreateGroupVisibilityEnum: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.enum("group_visibility")
+        _ = try await database.enum("group_visibility")
             .case(GroupVisibility.public.rawValue)
             .case(GroupVisibility.inviteOnly.rawValue)
             .create()
@@ -85,7 +85,7 @@ struct CreateGroupVisibilityEnum: AsyncMigration {
 
 struct CreateGroupRoleEnum: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.enum("group_role")
+        _ = try await database.enum("group_role")
             .case(GroupRole.owner.rawValue)
             .case(GroupRole.moderator.rawValue)
             .case(GroupRole.member.rawValue)
@@ -98,7 +98,7 @@ struct CreateGroupRoleEnum: AsyncMigration {
 
 struct CreateEventCategoryEnum: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.enum("event_category")
+        _ = try await database.enum("event_category")
             .case(EventCategory.culture.rawValue)
             .case(EventCategory.drinks.rawValue)
             .case(EventCategory.film.rawValue)
@@ -114,7 +114,7 @@ struct CreateEventCategoryEnum: AsyncMigration {
 
 struct CreateEventVisibilityEnum: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.enum("event_visibility")
+        _ = try await database.enum("event_visibility")
             .case(EventVisibility.public.rawValue)
             .case(EventVisibility.private.rawValue)
             .create()
@@ -126,7 +126,7 @@ struct CreateEventVisibilityEnum: AsyncMigration {
 
 struct CreateActivityFeedItemTypeEnum: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.enum("activity_feed_item_type")
+        _ = try await database.enum("activity_feed_item_type")
             .case(ActivityFeedItemType.joinedEvent.rawValue)
             .case(ActivityFeedItemType.leftEvent.rawValue)
             .case(ActivityFeedItemType.startedFollowing.rawValue)
@@ -140,7 +140,7 @@ struct CreateActivityFeedItemTypeEnum: AsyncMigration {
 
 struct CreateInvoiceStatusEnum: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.enum("invoice_status")
+        _ = try await database.enum("invoice_status")
             .case(InvoiceStatus.paid.rawValue)
             .case(InvoiceStatus.open.rawValue)
             .case(InvoiceStatus.uncollectible.rawValue)
@@ -154,7 +154,7 @@ struct CreateInvoiceStatusEnum: AsyncMigration {
 
 struct CreateDataExportStatusEnum: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.enum("data_export_status")
+        _ = try await database.enum("data_export_status")
             .case(DataExportStatus.pending.rawValue)
             .case(DataExportStatus.ready.rawValue)
             .case(DataExportStatus.expired.rawValue)

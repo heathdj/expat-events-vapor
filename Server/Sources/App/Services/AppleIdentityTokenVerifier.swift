@@ -29,7 +29,11 @@ struct AppleIdentityTokenVerifier {
 
         func verify(using signer: JWTSigner) throws {
             try expiration.verifyNotExpired()
-            try issuer.verify(equals: "https://appleid.apple.com")
+            // IssuerClaim has no built-in `.verify(equals:)` (unlike
+            // ExpirationClaim's `.verifyNotExpired()`) — compare directly.
+            guard issuer.value == "https://appleid.apple.com" else {
+                throw APIError.invalidProviderToken
+            }
         }
     }
 

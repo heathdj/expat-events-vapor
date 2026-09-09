@@ -1,4 +1,5 @@
 @testable import App
+import ExpatEventsAPI
 import XCTVapor
 import Fluent
 
@@ -26,7 +27,7 @@ final class AppTests: XCTestCase {
     /// DB connectivity.
     func testHealthCheckReturns200() async throws {
         try await withApp { app in
-            try await app.testing().test(.GET, "health") { res in
+            try await app.testable().test(.GET, "health") { res in
                 XCTAssertEqual(res.status, .ok)
             }
         }
@@ -36,11 +37,18 @@ final class AppTests: XCTestCase {
     func testSeedCommandIsIdempotent() async throws {
         try await withApp { app in
             let command = SeedCommand()
-            let context = CommandContext(console: app.console, input: CommandInput(arguments: ["seed"]))
-            try await command.run(using: context, signature: SeedCommand.Signature())
+            var context = CommandContext(console: app.console, input: CommandInput(arguments: ["seed"]))
+            // Vapor's real command-line runner sets `context.application`
+            // before invoking a command; constructing `CommandContext`
+            // directly (as a test must, to run a command outside the CLI)
+            // skips that, so `SeedCommand.run`'s `context.application...`
+            // access hits Vapor's own `fatalError("Application not set on
+            // context")`. Set it explicitly here.
+            context.application = app
+            try command.run(using: context, signature: SeedCommand.Signature())
             let countAfterFirstRun = try await User.query(on: app.db).count()
 
-            try await command.run(using: context, signature: SeedCommand.Signature())
+            try command.run(using: context, signature: SeedCommand.Signature())
             let countAfterSecondRun = try await User.query(on: app.db).count()
 
             XCTAssertEqual(countAfterFirstRun, countAfterSecondRun)

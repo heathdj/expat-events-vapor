@@ -4,14 +4,17 @@ Tracking against [`docs/expatevents-mvp-plan.md`](docs/expatevents-mvp-plan.md)'
 
 Legend: ✅ built (not yet compiler-verified — see AGENTS.md "step zero") · 🟡 partial · ⬜ not started
 
-## M1 — Project scaffolding & data model — ✅ built
+## M1 — Project scaffolding & data model — ✅ done (build + test + human-reviewed server checkpoint)
 
 - Monorepo layout: `Packages/ExpatEventsAPI`, `Server/`. ✅
 - Vapor project with Postgres via environment variables (`configure.swift`). ✅
 - Fluent migrations for every model in the architecture doc — all 16: `User`, `OAuthIdentity`, `PasskeyCredential`, `Subscription`, `Invoice`, `Group`, `GroupMembership`, `Event`, `EventAttendee`, `ChatMessage`, `Follow`, `ActivityFeedItem`, `Feedback`, `DeletionRequest`, `DataExportRequest`, `AdminAuditLog` — plus native Postgres enum types for every shared enum. ✅
 - Local dev seed script, idempotent (`Commands/SeedCommand.swift`). ✅
 - README. ✅
-- **Not yet done**: actually running `vapor build` / `swift build` and confirming a clean checkout produces a running server (criterion #5) — see AGENTS.md "step zero." This is the single most important next action.
+- `swift build` is clean (0 errors, 0 warnings from our own code — see `WARNINGS.md` for the third-party/tracked exceptions). ✅
+- `swift test` passes all 3 tests against real Postgres (`testHealthCheckReturns200`, `testFreeUserCanHostExactlyFiveActiveEvents`, `testSeedCommandIsIdempotent`) — criterion #4 (health check) and #3 (idempotent seed) both confirmed for real, not just written. ✅ Along the way, found and fixed real bugs: a missing `import ExpatEventsAPI` and a wrong XCTVapor API name in the test file, a dev Postgres on the default port colliding with another Postgres already running on this machine (moved to host port 5433 — see `docker-compose.yml`/`.env.example`), and a test that crashed invoking `SeedCommand` without setting `context.application` first.
+- Criterion #5 confirmed: `swift run App migrate --yes` (29 migrations) → `swift run App seed` (3 users, 1 group, 2 events) → `swift run App serve`, then `GET /health` returned `{"status":"ok","database":"connected"}` and the user visually reviewed `/events` and `/login` in a browser (intentionally unstyled beyond Tailwind's CDN defaults at this stage — noted as M4 follow-up). ✅
+- **All M1 acceptance criteria met.** Open items are tracked in `WARNINGS.md` (nothing launch-blocking) rather than here.
 
 ## M2 — Auth: Apple + Google — 🟡 partial
 
@@ -21,7 +24,7 @@ Legend: ✅ built (not yet compiler-verified — see AGENTS.md "step zero") · �
 - Bearer token (API) via `UserJWTPayload` + `UserBearerAuthenticator`; `POST /api/v1/auth/apple`/`/google` → `GET /api/v1/me`. ✅
 - Invalid/expired provider token → structured 401 via `APIErrorMiddleware`, never a 500. ✅ (untested against real tokens)
 - Sign-out invalidates the web session (`/logout`). ✅
-- **Not yet done**: end-to-end verification against real Apple/Google sandbox credentials (needs the prerequisites in AGENTS.md); the Sign in with Apple JS / Google Identity Services front-end wiring in `login.leaf` is written but unexercised.
+- **Not yet done**: end-to-end verification against real Apple/Google sandbox credentials (needs the prerequisites in AGENTS.md); the Sign in with Apple JS / Google Identity Services front-end wiring in `login.leaf` is written but unexercised. PR #2's independent review also flagged: no unit test exists yet for `AppleIdentityTokenVerifier`/`GoogleIdentityTokenVerifier` (e.g. a mismatched-issuer token correctly throwing `.invalidProviderToken`) — add one as part of this milestone's own verification pass, given it's security-relevant logic.
 
 ## M3 — Passkeys — ⬜ not started (stretch milestone; escape hatch applies)
 

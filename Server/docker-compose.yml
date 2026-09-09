@@ -6,7 +6,15 @@ services:
       POSTGRES_PASSWORD: vapor_password
       POSTGRES_DB: expatevents
     ports:
-      - "5432:5432"
+      # Host port 5433, not 5432: on a dev machine that already has some
+      # other Postgres (a Homebrew/system install, another project's
+      # container, etc.) listening on 127.0.0.1:5432, the OS routes
+      # connections to that more-specific listener ahead of Docker's
+      # wildcard-bound port mapping — so the app silently talks to the
+      # wrong database instead of this one. 5433 avoids the collision
+      # entirely. Keep DATABASE_PORT in .env/.env.example in sync with
+      # whatever's here.
+      - "5433:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
 
