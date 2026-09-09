@@ -4,14 +4,16 @@ Tracking against [`docs/expatevents-mvp-plan.md`](docs/expatevents-mvp-plan.md)'
 
 Legend: ✅ built (not yet compiler-verified — see AGENTS.md "step zero") · 🟡 partial · ⬜ not started
 
-## M1 — Project scaffolding & data model — ✅ built
+## M1 — Project scaffolding & data model — ✅ built and compiler-verified
 
 - Monorepo layout: `Packages/ExpatEventsAPI`, `Server/`. ✅
 - Vapor project with Postgres via environment variables (`configure.swift`). ✅
 - Fluent migrations for every model in the architecture doc — all 16: `User`, `OAuthIdentity`, `PasskeyCredential`, `Subscription`, `Invoice`, `Group`, `GroupMembership`, `Event`, `EventAttendee`, `ChatMessage`, `Follow`, `ActivityFeedItem`, `Feedback`, `DeletionRequest`, `DataExportRequest`, `AdminAuditLog` — plus native Postgres enum types for every shared enum. ✅
 - Local dev seed script, idempotent (`Commands/SeedCommand.swift`). ✅
 - README. ✅
-- **Not yet done**: actually running `vapor build` / `swift build` and confirming a clean checkout produces a running server (criterion #5) — see AGENTS.md "step zero." This is the single most important next action.
+- `swift build` is clean (0 errors, 0 warnings from our own code — see `WARNINGS.md` for the third-party/tracked exceptions). ✅
+- `swift test` passes all 3 tests against real Postgres (`testHealthCheckReturns200`, `testFreeUserCanHostExactlyFiveActiveEvents`, `testSeedCommandIsIdempotent`) — criterion #4 (health check) and #3 (idempotent seed) both confirmed for real, not just written. ✅ Along the way, found and fixed real bugs: a missing `import ExpatEventsAPI` and a wrong XCTVapor API name in the test file, a dev Postgres on the default port colliding with another Postgres already running on this machine (moved to host port 5433 — see `docker-compose.yml`/`.env.example`), and a test that crashed invoking `SeedCommand` without setting `context.application` first.
+- **Not yet done**: criterion #5 (a clean checkout producing a *running* server, not just passing tests) — next up is `swift run App migrate --yes && swift run App seed && swift run App serve` as an actual human-reviewable checkpoint, then PR #1.
 
 ## M2 — Auth: Apple + Google — 🟡 partial
 
