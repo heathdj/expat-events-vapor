@@ -43,7 +43,7 @@ expatevents-mvp/
 - **Docker** (or a local Postgres 14+ instance) for the database.
 - Optionally, the [Vapor toolbox](https://docs.vapor.codes/getting-started/toolbox/) (`brew install vapor`) — not required, `swift build`/`swift run` work fine without it.
 
-> **A note on this scaffold's build status**: this project was scaffolded and written in an environment without a Swift toolchain available to compile against, so the code below has **not** been compiled or run yet. It's written carefully against real Vapor 4 / Fluent 4 APIs, but **the very first thing to do is `swift build` it and fix whatever the compiler finds** — treat that as step zero of continuing this build, not a sign something went wrong.
+> **Build status**: this project builds and its test suite passes for real. M1 (scaffolding & data model) and M4 (events) are compiler-verified, test-passing (`swift test`, run against real Postgres — see below), server-checkpointed by a human, independently code-reviewed, and merged; see [`MILESTONES.md`](MILESTONES.md) for the authoritative per-milestone status and [`WARNINGS.md`](WARNINGS.md) for the (small, tracked) set of open build warnings. If you're picking this up fresh, a clean `swift build` followed by `swift test` against a running Postgres (§ below) is still the right first move to confirm your environment matches — it should come back clean.
 
 ## Getting started (from a clean checkout)
 
@@ -80,7 +80,7 @@ swift test
 
 ## What's implemented vs. not
 
-See [`MILESTONES.md`](MILESTONES.md) for the authoritative, milestone-by-milestone status. Short version: **M1 (scaffolding & full data model)** and most of **M2 (Apple/Google sign-in)** and **M4 (events, including Free-tier plan limits)** are built. M3 and M5–M13 are not — they're scoped in the plan and architecture docs, ready for whoever continues.
+See [`MILESTONES.md`](MILESTONES.md) for the authoritative, milestone-by-milestone status. Short version: **M1 (scaffolding & full data model)** and **M4 (events, including Free-tier plan limits and htmx join/leave/cancel)** are done. **M2 (Apple/Google sign-in)** is built but not yet verified end-to-end — it was deliberately deferred pending real Apple Developer / Google Cloud credentials, which are now in hand and being wired up. M3 and M5–M13 aren't started — they're scoped in the plan and architecture docs, ready for whoever continues.
 
 ## Deliberately out of scope for this MVP
 
