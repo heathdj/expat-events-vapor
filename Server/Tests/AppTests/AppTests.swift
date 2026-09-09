@@ -343,6 +343,24 @@ final class AppTests: XCTestCase {
             XCTAssertTrue(html.contains("Attendees (1)"), "Attendee count not rendered correctly.")
             XCTAssertTrue(html.contains("/events/\(try event.requireID())/leave"), "Attending user should see a Leave form, not Join.")
             XCTAssertFalse(html.contains("Cancel event"), "canManage: false should hide the cancel button.")
+
+            // Also render the full page that #extends this same partial —
+            // event-detail.leaf's own rendering isn't exercised by any
+            // other test, and it's exactly this kind of Leaf wiring bug
+            // (a literal '#' in an hx-target value getting misparsed as a
+            // tag) that only surfaces at render time, never at `swift
+            // build`. Caught and fixed one exactly like it in the partial
+            // above before this test was added — this half confirms the
+            // #extend call site itself is equally clean.
+            let pageView = try await req.view.render("pages/event-detail", EventWebController.EventDetailPageContext(
+                title: dto.title,
+                event: dto,
+                isSignedIn: true,
+                canManage: false
+            ))
+            let pageHTML = String(buffer: pageView.data)
+            XCTAssertTrue(pageHTML.contains(#"id="event-fragment""#), "Full page should include the extended fragment.")
+            XCTAssertTrue(pageHTML.contains("Fragment Test Event"), "Full page should show the event title.")
         }
     }
 }
