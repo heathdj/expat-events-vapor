@@ -16,7 +16,7 @@ Legend: ✅ built (not yet compiler-verified — see AGENTS.md "step zero") · �
 - Criterion #5 confirmed: `swift run App migrate --yes` (29 migrations) → `swift run App seed` (3 users, 1 group, 2 events) → `swift run App serve`, then `GET /health` returned `{"status":"ok","database":"connected"}` and the user visually reviewed `/events` and `/login` in a browser (intentionally unstyled beyond Tailwind's CDN defaults at this stage — noted as M4 follow-up). ✅
 - **All M1 acceptance criteria met.** Open items are tracked in `WARNINGS.md` (nothing launch-blocking) rather than here.
 
-## M2 — Auth: Apple + Google — 🟡 partial
+## M2 — Auth: Apple + Google — 🟡 partial (Google in progress; Apple's live verification deliberately deferred to M13)
 
 - `/login` offers Apple/Google only, no password field. ✅ (`pages/login.leaf`)
 - New sign-in creates one `User` + one `OAuthIdentity`; a second provider on the same verified email links to the same `User` (`AuthService.findOrCreateUser`). ✅
@@ -24,7 +24,8 @@ Legend: ✅ built (not yet compiler-verified — see AGENTS.md "step zero") · �
 - Bearer token (API) via `UserJWTPayload` + `UserBearerAuthenticator`; `POST /api/v1/auth/apple`/`/google` → `GET /api/v1/me`. ✅
 - Invalid/expired provider token → structured 401 via `APIErrorMiddleware`, never a 500. ✅ (untested against real tokens)
 - Sign-out invalidates the web session (`/logout`). ✅
-- **Not yet done**: end-to-end verification against real Apple/Google sandbox credentials (needs the prerequisites in AGENTS.md); the Sign in with Apple JS / Google Identity Services front-end wiring in `login.leaf` is written but unexercised. PR #2's independent review also flagged: no unit test exists yet for `AppleIdentityTokenVerifier`/`GoogleIdentityTokenVerifier` (e.g. a mismatched-issuer token correctly throwing `.invalidProviderToken`) — add one as part of this milestone's own verification pass, given it's security-relevant logic.
+- **Deliberate scope decision (2026-09-09)**: Sign in with Apple JS requires a verified HTTPS domain in its Services ID's Web Authentication Configuration — it does not accept `localhost`, and `expatevents.net` currently points at Firebase Hosting (per the plan's own §2 prerequisites; DNS doesn't move to this build until M13). Rather than standing up a throwaway tunnel domain just to unblock local testing now, **Apple-specific configuration and end-to-end verification are moved to M13** (Deployment), once the real staging/production domain exists to register. `APPLE_CLIENT_ID` support, `AppleIdentityTokenVerifier`, and the Sign in with Apple JS wiring in `login.leaf` are already built and code-reviewed — this defers *testing them for real*, not the code itself, and M13's acceptance criteria gain an explicit item for it (see below). Google has no such constraint (`localhost` is an allowed JavaScript origin), so **M2 proceeds now on Google alone**: `GOOGLE_CLIENT_ID` has been provided and end-to-end verification (real sign-in → session → `/api/v1/me`) is in progress.
+- **Also not yet done**: PR #2's independent review flagged that no unit test exists for `AppleIdentityTokenVerifier`/`GoogleIdentityTokenVerifier` (e.g. a mismatched-issuer/audience token correctly throwing `.invalidProviderToken`) — still worth adding as part of this milestone's own verification pass for the Google verifier now (security-relevant logic), and for the Apple verifier when M13 picks it back up.
 
 ## M3 — Passkeys — ⬜ not started (stretch milestone; escape hatch applies)
 
