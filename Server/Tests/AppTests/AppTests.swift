@@ -207,16 +207,19 @@ final class AppTests: XCTestCase {
             let otherHost = try await makeUser(db: app.db, email: "filter-other-host@example.com")
             let service = EventService(db: app.db)
 
+            let earlyDate = Date().addingTimeInterval(3600)
+            let lateDate = Date().addingTimeInterval(30 * 24 * 3600)
+
             let matching = try await service.createEvent(
-                makeEventRequest(title: "Culture in Berlin", category: .culture, cityAddress: "Berlin, Germany"),
+                makeEventRequest(title: "Culture in Berlin", category: .culture, date: earlyDate, cityAddress: "Berlin, Germany", venueAddress: "Berlin Opera House"),
                 hostUserID: try host.requireID()
             )
             _ = try await service.createEvent(
-                makeEventRequest(title: "Drinks in Berlin", category: .drinks, cityAddress: "Berlin, Germany"),
+                makeEventRequest(title: "Drinks in Berlin", category: .drinks, date: earlyDate, cityAddress: "Berlin, Germany", venueAddress: "Berlin Bar"),
                 hostUserID: try host.requireID()
             )
             _ = try await service.createEvent(
-                makeEventRequest(title: "Culture in Paris", category: .culture, cityAddress: "Paris, France"),
+                makeEventRequest(title: "Culture in Paris", category: .culture, date: lateDate, cityAddress: "Paris, France", venueAddress: "Louvre"),
                 hostUserID: try otherHost.requireID()
             )
 
@@ -235,6 +238,21 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(byHost.count, 1)
             XCTAssertEqual(byHost.first?.cityAddress, "Paris, France")
 
+            // Venue filter should match only the event at that venue.
+            let byVenue = try await service.filteredEvents(
+                EventFilterQuery(venue: "Opera"),
+                requesterID: nil
+            )
+            XCTAssertEqual(byVenue.map { $0.id }, [try matching.requireID()])
+
+            // Date filter (onOrAfterDate) should exclude events strictly before it.
+            let byDate = try await service.filteredEvents(
+                EventFilterQuery(onOrAfterDate: lateDate.addingTimeInterval(-3600)),
+                requesterID: nil
+            )
+            XCTAssertEqual(byDate.count, 1)
+            XCTAssertEqual(byDate.first?.cityAddress, "Paris, France")
+
             // A category with no matches should return nothing.
             let none = try await service.filteredEvents(
                 EventFilterQuery(category: .film),
@@ -251,14 +269,15 @@ final class AppTests: XCTestCase {
             let host = try await makeUser(db: app.db, email: "detail-host@example.com")
             let attendee = try await makeUser(db: app.db, email: "detail-attendee@example.com")
             let service = EventService(db: app.db)
-            let event = try await service.createEvent(
-                makeEventRequest(title: "Detail Test Event", venueAddress: "Some Venue, Some City"),
-                hostUserID: try host.requireID()
-            )
+            let eventDate = Date().addingTimeInterval(7200)
+            let request = makeEventRequest(title: "Detail Test Event", date: eventDate, venueAddress: "Some Venue, Some City")
+            let event = try await service.createEvent(request, hostUserID: try host.requireID())
             _ = try await service.join(event, userID: try attendee.requireID())
 
             let dto = try await service.fullDTO(for: event, requesterID: try attendee.requireID())
             XCTAssertEqual(dto.title, "Detail Test Event")
+            XCTAssertEqual(dto.description, "Test event")
+            XCTAssertEqual(dto.date.timeIntervalSince1970, eventDate.timeIntervalSince1970, accuracy: 0.001)
             XCTAssertEqual(dto.venueAddress, "Some Venue, Some City")
             XCTAssertEqual(dto.hostDisplayName, host.displayName)
             XCTAssertEqual(dto.attendees.count, 1)
@@ -361,6 +380,79 @@ final class AppTests: XCTestCase {
             let pageHTML = String(buffer: pageView.data)
             XCTAssertTrue(pageHTML.contains(#"id="event-fragment""#), "Full page should include the extended fragment.")
             XCTAssertTrue(pageHTML.contains("Fragment Test Event"), "Full page should show the event title.")
+        }
+    }
+
+    // MARK: - PR #3 independent-review follow-up
+
+    /// Regression test for a finding from PR #3's independent code review:
+    /// `EventWebController.respondWithEventUpdate` renders the full event
+    /// (title/venue/description/attendee list) directly in the response to
+    /// `POST /events/:id/leave` when the request carries the `HX-Request`
+    /// header. Before this fix, `EventService.leave` — unlike `join` and
+    /// `detail`, which both call `assertVisible` first — never checked
+    /// visibility, so a signed-in user who was never a member of a private
+    /// group could fetch that group's private event details simply by
+    /// guessing/observing the event's UUID and POSTing to `/leave` (a
+    /// harmless no-op attendee-row delete either way). This confirms
+    /// `EventService.leave` now rejects a non-member/non-attendee the same
+    /// way `join` and `detail` already do.
+    func testNonMemberCannotLeavePrivateGroupEventOrLeakDetails() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "leak-owner@example.com", plan: .premium)
+            // `EventService.assertVisible` gates on the *event's* own
+            // `.private` visibility plus group membership, not the
+            // group's own `visibility` field (public/inviteOnly, neither
+            // of which is "private") — so the group itself can stay at
+            // its default visibility here.
+            let group = Group(name: "Private Circle", slug: "private-circle-\(UUID())", description: "Members only", ownerID: try owner.requireID())
+            try await group.save(on: app.db)
+            let membership = GroupMembership(groupID: try group.requireID(), userID: try owner.requireID(), role: .owner)
+            try await membership.save(on: app.db)
+
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(
+                CreateEventRequest(
+                    title: "Members-only meetup",
+                    description: "Sensitive details",
+                    category: .culture,
+                    date: Date().addingTimeInterval(3600),
+                    cityAddress: "Test City", cityLat: 0, cityLng: 0,
+                    venueAddress: "Secret Venue", venueLat: 0, venueLng: 0,
+                    hostGroupID: try group.requireID(),
+                    visibility: .private
+                ),
+                hostUserID: try owner.requireID()
+            )
+
+            // A user who was never a member of the group, and never joined
+            // the event, must be rejected — not have the event silently
+            // "left" and its details handed back.
+            let outsider = try await makeUser(db: app.db, email: "leak-outsider@example.com")
+            do {
+                _ = try await service.leave(event, userID: try outsider.requireID())
+                XCTFail("A non-member/non-attendee should not be able to \"leave\" a private group event they can't see.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "not_found")
+            }
+
+            // An existing attendee must still be able to leave even if they
+            // can no longer see the event (e.g. removed from the group) —
+            // the fix must not trade the leak for a new way to strand a
+            // dangling attendee row.
+            let formerMember = try await makeUser(db: app.db, email: "leak-former-member@example.com")
+            let formerMembership = GroupMembership(groupID: try group.requireID(), userID: try formerMember.requireID(), role: .member)
+            try await formerMembership.save(on: app.db)
+            _ = try await service.join(event, userID: try formerMember.requireID())
+            try await formerMembership.delete(on: app.db)
+
+            let stillLeaves = try await service.leave(event, userID: try formerMember.requireID())
+            XCTAssertEqual(try stillLeaves.requireID(), try event.requireID())
+            let remainingAttendance = try await EventAttendee.query(on: app.db)
+                .filter(\.$event.$id == event.requireID())
+                .filter(\.$user.$id == formerMember.requireID())
+                .count()
+            XCTAssertEqual(remainingAttendance, 0, "A former member who leaves should have their attendee row removed, not left dangling.")
         }
     }
 }
