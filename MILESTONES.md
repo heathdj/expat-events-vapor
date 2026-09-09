@@ -30,13 +30,20 @@ Legend: ✅ built (not yet compiler-verified — see AGENTS.md "step zero") · �
 
 `PasskeyCredential` exists in the M1 data model so the schema won't shift later, but no WebAuthn ceremony, `/account/passkeys` UI, or `swift-server/swift-webauthn` integration yet. Per the plan's own escape hatch, this can ship as a documented fast-follow provided M2 fully covers sign-in on its own.
 
-## M4 — Events — 🟡 partial
+## M4 — Events — ✅ done (pending compiler + human server checkpoint verification)
 
-- Create (self-hosted and group-hosted), browse/filter, join/leave, cancel: `EventService` + `EventWebController` + `EventAPIController`. ✅
-- Free-tier plan limits (5 active events, 5 attendees/event, no private events) via `PlanLimitsService`, enforced server-side on both web and API paths. ✅
-- Non-host cannot edit/cancel (`EventService.assertCanManage`, `403` via `APIError.forbidden`). ✅
-- Boundary test for the 5-vs-6 active-event limit (`AppTests.testFreeUserCanHostExactlyFiveActiveEvents`) — the plan's own §5 flags exactly this as the likely bug class. ✅
-- **Not yet done**: htmx fragment responses (join/leave currently redirect the full page rather than swap an OOB fragment — see the note atop `EventWebController.swift`); the Tailwind CLI build (currently CDN-loaded in `layouts/base.leaf`); a real city/venue autocomplete widget on the create-event form (currently hidden lat/lng inputs default to `0`); compiler verification.
+All 8 acceptance criteria from the plan (§3) are now implemented and each has a dedicated test in `AppTests.swift`:
+
+1. Free user capped at 5 active events, 6th rejected — `testFreeUserCanHostExactlyFiveActiveEvents`. ✅
+2. Free-tier event capped at 5 attendees, 6th join rejected — `testFreeTierEventAcceptsExactlyFiveAttendees`. ✅
+3. Free user can't set an event `private` (server-side, not just UI) — `testFreeUserCannotCreatePrivateEvent` + `testPremiumUserCanCreatePrivateEvent` (positive case, confirms it's plan-gated not a blanket ban). ✅
+4. `/events` filters by category, city, venue, host, date, matching and excluding correctly — `testEventFilteringMatchesAndExcludesCorrectly`. ✅
+5. Event detail shows correct title/host/date/venue/description/attendees — `testEventDetailDTOHasCorrectFields`. ✅
+6. Join/leave updates via htmx swap, no full reload — new `partials/event-fragment.leaf`, extended inline by `pages/event-detail.leaf` for the normal render and rendered standalone by `EventWebController`'s `respondWithEventUpdate` when the request carries htmx's `HX-Request` header (a non-JS `<form>` submit still gets the old full-page redirect, kept as a fallback). ✅ *(pending visual confirmation at the next server checkpoint — Leaf template errors only surface at render time, not `swift build`.)*
+7. Cancel sets `isCancelled = true`, row and attendee history survive — `testCancelEventSurvivesWithAttendeeHistory`. ✅
+8. Non-host can't edit/cancel, 403 — `testNonHostCannotCancelSomeoneElsesEvent`. ✅
+
+**Not yet done** (explicitly out of scope for M4's own acceptance criteria, tracked as follow-ups): the Tailwind CLI build (currently CDN-loaded in `layouts/base.leaf`); a real city/venue autocomplete widget on the create-event form (currently hidden lat/lng inputs default to `0`).
 
 ## M5 — Realtime chat — ⬜ not started
 
