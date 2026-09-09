@@ -203,7 +203,27 @@ struct EventService {
         return event
     }
 
+    /// Unlike `join`, this doesn't unconditionally `assertVisible` first:
+    /// an existing attendee who has since lost visibility (e.g. removed
+    /// from the hosting group) must still be able to leave, rather than
+    /// being stuck with a dangling attendee row they can no longer reach.
+    /// A non-attendee, though, gets the same `notFound` a stranger would
+    /// from `join`/`detail` — this is what closes the information leak an
+    /// independent review of PR #3 found: `EventWebController`'s htmx
+    /// fragment response renders the full event (title/venue/description/
+    /// attendee list) straight from this call's result, so an
+    /// unauthorized caller could previously fish for private group-event
+    /// details via `POST /events/:id/leave` even though `join`/`detail`
+    /// both correctly rejected them.
     func leave(_ event: Event, userID: UUID) async throws -> Event {
+        let isAttending = try await EventAttendee.query(on: db)
+            .filter(\.$event.$id == event.requireID())
+            .filter(\.$user.$id == userID)
+            .count() > 0
+        if !isAttending {
+            try await assertVisible(event, to: userID)
+        }
+
         try await EventAttendee.query(on: db)
             .filter(\.$event.$id == event.requireID())
             .filter(\.$user.$id == userID)

@@ -102,4 +102,357 @@ final class AppTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - M4 test helpers
+
+    private func makeUser(db: Database, email: String, plan: PlanTier = .free) async throws -> User {
+        let user = User(
+            displayName: email,
+            email: email,
+            privacyPolicyVersion: LegalVersions.privacyPolicy,
+            termsVersion: LegalVersions.terms
+        )
+        try await user.save(on: db)
+        let subscription = Subscription(userID: try user.requireID(), plan: plan, status: .active)
+        try await subscription.save(on: db)
+        return user
+    }
+
+    private func makeEventRequest(
+        title: String = "Test Event",
+        category: EventCategory = .culture,
+        date: Date = Date().addingTimeInterval(3600),
+        cityAddress: String = "Test City",
+        venueAddress: String = "Test Venue",
+        visibility: EventVisibility = .public
+    ) -> CreateEventRequest {
+        CreateEventRequest(
+            title: title,
+            description: "Test event",
+            category: category,
+            date: date,
+            cityAddress: cityAddress,
+            cityLat: 0, cityLng: 0,
+            venueAddress: venueAddress,
+            venueLat: 0, venueLng: 0,
+            visibility: visibility
+        )
+    }
+
+    /// M4 acceptance criterion #2: a Free-tier event accepts up to 5
+    /// attendees; the 6th join attempt is rejected with a plan-limit error.
+    func testFreeTierEventAcceptsExactlyFiveAttendees() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "host@example.com")
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(makeEventRequest(title: "Popular Event"), hostUserID: try host.requireID())
+
+            for index in 1...5 {
+                let attendee = try await makeUser(db: app.db, email: "attendee\(index)@example.com")
+                _ = try await service.join(event, userID: try attendee.requireID())
+            }
+
+            let sixthAttendee = try await makeUser(db: app.db, email: "attendee6@example.com")
+            do {
+                _ = try await service.join(event, userID: try sixthAttendee.requireID())
+                XCTFail("The 6th attendee should have been rejected by the plan limit.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "plan_limit_exceeded")
+            }
+
+            let finalCount = try await EventAttendee.query(on: app.db).filter(\.$event.$id == event.requireID()).count()
+            XCTAssertEqual(finalCount, 5)
+        }
+    }
+
+    /// M4 acceptance criterion #3: a Free user cannot set an event to
+    /// `private`, even by calling the service directly (bypassing the UI).
+    func testFreeUserCannotCreatePrivateEvent() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "free-private@example.com")
+            let service = EventService(db: app.db)
+            do {
+                _ = try await service.createEvent(
+                    makeEventRequest(title: "Should be rejected", visibility: .private),
+                    hostUserID: try host.requireID()
+                )
+                XCTFail("A Free user's private event should have been rejected.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "plan_limit_exceeded")
+            }
+        }
+    }
+
+    /// M4 acceptance criterion #3 (positive case): a Premium user CAN create
+    /// a private event — confirms the rejection above is plan-gated, not a
+    /// blanket ban on the feature.
+    func testPremiumUserCanCreatePrivateEvent() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "premium-private@example.com", plan: .premium)
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(
+                makeEventRequest(title: "Premium private event", visibility: .private),
+                hostUserID: try host.requireID()
+            )
+            XCTAssertEqual(event.visibility, .private)
+        }
+    }
+
+    /// M4 acceptance criterion #4: `/events` filters by category, city,
+    /// venue, host, and date correctly against both matching and
+    /// non-matching rows.
+    func testEventFilteringMatchesAndExcludesCorrectly() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "filter-host@example.com")
+            let otherHost = try await makeUser(db: app.db, email: "filter-other-host@example.com")
+            let service = EventService(db: app.db)
+
+            let earlyDate = Date().addingTimeInterval(3600)
+            let lateDate = Date().addingTimeInterval(30 * 24 * 3600)
+
+            let matching = try await service.createEvent(
+                makeEventRequest(title: "Culture in Berlin", category: .culture, date: earlyDate, cityAddress: "Berlin, Germany", venueAddress: "Berlin Opera House"),
+                hostUserID: try host.requireID()
+            )
+            _ = try await service.createEvent(
+                makeEventRequest(title: "Drinks in Berlin", category: .drinks, date: earlyDate, cityAddress: "Berlin, Germany", venueAddress: "Berlin Bar"),
+                hostUserID: try host.requireID()
+            )
+            _ = try await service.createEvent(
+                makeEventRequest(title: "Culture in Paris", category: .culture, date: lateDate, cityAddress: "Paris, France", venueAddress: "Louvre"),
+                hostUserID: try otherHost.requireID()
+            )
+
+            // Category + city filter together should match only the one event.
+            let filtered = try await service.filteredEvents(
+                EventFilterQuery(category: .culture, city: "Berlin"),
+                requesterID: nil
+            )
+            XCTAssertEqual(filtered.map { $0.id }, [try matching.requireID()])
+
+            // Host filter should isolate that host's events only.
+            let byHost = try await service.filteredEvents(
+                EventFilterQuery(hostUserID: try otherHost.requireID()),
+                requesterID: nil
+            )
+            XCTAssertEqual(byHost.count, 1)
+            XCTAssertEqual(byHost.first?.cityAddress, "Paris, France")
+
+            // Venue filter should match only the event at that venue.
+            let byVenue = try await service.filteredEvents(
+                EventFilterQuery(venue: "Opera"),
+                requesterID: nil
+            )
+            XCTAssertEqual(byVenue.map { $0.id }, [try matching.requireID()])
+
+            // Date filter (onOrAfterDate) should exclude events strictly before it.
+            let byDate = try await service.filteredEvents(
+                EventFilterQuery(onOrAfterDate: lateDate.addingTimeInterval(-3600)),
+                requesterID: nil
+            )
+            XCTAssertEqual(byDate.count, 1)
+            XCTAssertEqual(byDate.first?.cityAddress, "Paris, France")
+
+            // A category with no matches should return nothing.
+            let none = try await service.filteredEvents(
+                EventFilterQuery(category: .film),
+                requesterID: nil
+            )
+            XCTAssertTrue(none.isEmpty)
+        }
+    }
+
+    /// M4 acceptance criterion #5: the event detail DTO carries the correct
+    /// title, host, date, venue, description, and attendee list.
+    func testEventDetailDTOHasCorrectFields() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "detail-host@example.com")
+            let attendee = try await makeUser(db: app.db, email: "detail-attendee@example.com")
+            let service = EventService(db: app.db)
+            let eventDate = Date().addingTimeInterval(7200)
+            let request = makeEventRequest(title: "Detail Test Event", date: eventDate, venueAddress: "Some Venue, Some City")
+            let event = try await service.createEvent(request, hostUserID: try host.requireID())
+            _ = try await service.join(event, userID: try attendee.requireID())
+
+            let dto = try await service.fullDTO(for: event, requesterID: try attendee.requireID())
+            XCTAssertEqual(dto.title, "Detail Test Event")
+            XCTAssertEqual(dto.description, "Test event")
+            XCTAssertEqual(dto.date.timeIntervalSince1970, eventDate.timeIntervalSince1970, accuracy: 0.001)
+            XCTAssertEqual(dto.venueAddress, "Some Venue, Some City")
+            XCTAssertEqual(dto.hostDisplayName, host.displayName)
+            XCTAssertEqual(dto.attendees.count, 1)
+            XCTAssertEqual(dto.attendees.first?.id, try attendee.requireID())
+            XCTAssertTrue(dto.isRequesterAttending)
+        }
+    }
+
+    /// M4 acceptance criterion #7: cancelling sets `isCancelled = true`; the
+    /// row and attendee history survive (no delete).
+    func testCancelEventSurvivesWithAttendeeHistory() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "cancel-host@example.com")
+            let attendee = try await makeUser(db: app.db, email: "cancel-attendee@example.com")
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(makeEventRequest(title: "To be cancelled"), hostUserID: try host.requireID())
+            _ = try await service.join(event, userID: try attendee.requireID())
+
+            let cancelled = try await service.cancelEvent(event, requesterID: try host.requireID())
+            XCTAssertTrue(cancelled.isCancelled)
+
+            let stillExists = try await Event.find(event.requireID(), on: app.db)
+            XCTAssertNotNil(stillExists, "The event row must survive cancellation, not be deleted.")
+
+            let attendeeStillThere = try await EventAttendee.query(on: app.db)
+                .filter(\.$event.$id == event.requireID())
+                .filter(\.$user.$id == attendee.requireID())
+                .count()
+            XCTAssertEqual(attendeeStillThere, 1, "Attendee history must survive cancellation.")
+        }
+    }
+
+    /// M4 acceptance criterion #8: a non-host cannot edit or cancel someone
+    /// else's event — 403 (`APIError.forbidden`) on a direct attempt.
+    func testNonHostCannotCancelSomeoneElsesEvent() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "real-host@example.com")
+            let intruder = try await makeUser(db: app.db, email: "intruder@example.com")
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(makeEventRequest(title: "Someone else's event"), hostUserID: try host.requireID())
+
+            do {
+                _ = try await service.cancelEvent(event, requesterID: try intruder.requireID())
+                XCTFail("A non-host should not be able to cancel this event.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "forbidden")
+            }
+
+            let stillActive = try await Event.find(event.requireID(), on: app.db)
+            XCTAssertEqual(stillActive?.isCancelled, false)
+        }
+    }
+
+    /// M4 acceptance criterion #6, the part a unit test can actually cover:
+    /// confirms `partials/event-fragment.leaf` renders without error and
+    /// with the right content. This is exactly the failure mode a plain
+    /// `swift build` can't catch — Leaf template errors only surface at
+    /// render time. Rendering the join/leave/cancel HTTP routes themselves
+    /// end-to-end would need a simulated authenticated session, which
+    /// isn't available here (sign-in is OAuth-only — no password/test
+    /// login route — and M2's real Apple/Google credentials aren't set up
+    /// in this environment either), so this renders the fragment template
+    /// directly instead of round-tripping through HTTP.
+    func testEventFragmentPartialRenders() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "fragment-host@example.com")
+            let attendee = try await makeUser(db: app.db, email: "fragment-attendee@example.com")
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(makeEventRequest(title: "Fragment Test Event"), hostUserID: try host.requireID())
+            _ = try await service.join(event, userID: try attendee.requireID())
+
+            let dto = try await service.fullDTO(for: event, requesterID: try attendee.requireID())
+            let req = Request(application: app, on: app.eventLoopGroup.any())
+            let view = try await req.view.render("partials/event-fragment", EventWebController.EventFragmentContext(
+                event: dto,
+                isSignedIn: true,
+                canManage: false
+            ))
+            let html = String(buffer: view.data)
+
+            XCTAssertTrue(html.contains(#"id="event-fragment""#), "Fragment root element missing.")
+            XCTAssertTrue(html.contains("Attendees (1)"), "Attendee count not rendered correctly.")
+            XCTAssertTrue(html.contains("/events/\(try event.requireID())/leave"), "Attending user should see a Leave form, not Join.")
+            XCTAssertFalse(html.contains("Cancel event"), "canManage: false should hide the cancel button.")
+
+            // Also render the full page that #extends this same partial —
+            // event-detail.leaf's own rendering isn't exercised by any
+            // other test, and it's exactly this kind of Leaf wiring bug
+            // (a literal '#' in an hx-target value getting misparsed as a
+            // tag) that only surfaces at render time, never at `swift
+            // build`. Caught and fixed one exactly like it in the partial
+            // above before this test was added — this half confirms the
+            // #extend call site itself is equally clean.
+            let pageView = try await req.view.render("pages/event-detail", EventWebController.EventDetailPageContext(
+                title: dto.title,
+                event: dto,
+                isSignedIn: true,
+                canManage: false
+            ))
+            let pageHTML = String(buffer: pageView.data)
+            XCTAssertTrue(pageHTML.contains(#"id="event-fragment""#), "Full page should include the extended fragment.")
+            XCTAssertTrue(pageHTML.contains("Fragment Test Event"), "Full page should show the event title.")
+        }
+    }
+
+    // MARK: - PR #3 independent-review follow-up
+
+    /// Regression test for a finding from PR #3's independent code review:
+    /// `EventWebController.respondWithEventUpdate` renders the full event
+    /// (title/venue/description/attendee list) directly in the response to
+    /// `POST /events/:id/leave` when the request carries the `HX-Request`
+    /// header. Before this fix, `EventService.leave` — unlike `join` and
+    /// `detail`, which both call `assertVisible` first — never checked
+    /// visibility, so a signed-in user who was never a member of a private
+    /// group could fetch that group's private event details simply by
+    /// guessing/observing the event's UUID and POSTing to `/leave` (a
+    /// harmless no-op attendee-row delete either way). This confirms
+    /// `EventService.leave` now rejects a non-member/non-attendee the same
+    /// way `join` and `detail` already do.
+    func testNonMemberCannotLeavePrivateGroupEventOrLeakDetails() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "leak-owner@example.com", plan: .premium)
+            // `EventService.assertVisible` gates on the *event's* own
+            // `.private` visibility plus group membership, not the
+            // group's own `visibility` field (public/inviteOnly, neither
+            // of which is "private") — so the group itself can stay at
+            // its default visibility here.
+            let group = Group(name: "Private Circle", slug: "private-circle-\(UUID())", description: "Members only", ownerID: try owner.requireID())
+            try await group.save(on: app.db)
+            let membership = GroupMembership(groupID: try group.requireID(), userID: try owner.requireID(), role: .owner)
+            try await membership.save(on: app.db)
+
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(
+                CreateEventRequest(
+                    title: "Members-only meetup",
+                    description: "Sensitive details",
+                    category: .culture,
+                    date: Date().addingTimeInterval(3600),
+                    cityAddress: "Test City", cityLat: 0, cityLng: 0,
+                    venueAddress: "Secret Venue", venueLat: 0, venueLng: 0,
+                    hostGroupID: try group.requireID(),
+                    visibility: .private
+                ),
+                hostUserID: try owner.requireID()
+            )
+
+            // A user who was never a member of the group, and never joined
+            // the event, must be rejected — not have the event silently
+            // "left" and its details handed back.
+            let outsider = try await makeUser(db: app.db, email: "leak-outsider@example.com")
+            do {
+                _ = try await service.leave(event, userID: try outsider.requireID())
+                XCTFail("A non-member/non-attendee should not be able to \"leave\" a private group event they can't see.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "not_found")
+            }
+
+            // An existing attendee must still be able to leave even if they
+            // can no longer see the event (e.g. removed from the group) —
+            // the fix must not trade the leak for a new way to strand a
+            // dangling attendee row.
+            let formerMember = try await makeUser(db: app.db, email: "leak-former-member@example.com")
+            let formerMembership = GroupMembership(groupID: try group.requireID(), userID: try formerMember.requireID(), role: .member)
+            try await formerMembership.save(on: app.db)
+            _ = try await service.join(event, userID: try formerMember.requireID())
+            try await formerMembership.delete(on: app.db)
+
+            let stillLeaves = try await service.leave(event, userID: try formerMember.requireID())
+            XCTAssertEqual(try stillLeaves.requireID(), try event.requireID())
+            let remainingAttendance = try await EventAttendee.query(on: app.db)
+                .filter(\.$event.$id == event.requireID())
+                .filter(\.$user.$id == formerMember.requireID())
+                .count()
+            XCTAssertEqual(remainingAttendance, 0, "A former member who leaves should have their attendee row removed, not left dangling.")
+        }
+    }
 }

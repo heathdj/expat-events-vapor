@@ -30,13 +30,22 @@ Legend: ✅ built (not yet compiler-verified — see AGENTS.md "step zero") · �
 
 `PasskeyCredential` exists in the M1 data model so the schema won't shift later, but no WebAuthn ceremony, `/account/passkeys` UI, or `swift-server/swift-webauthn` integration yet. Per the plan's own escape hatch, this can ship as a documented fast-follow provided M2 fully covers sign-in on its own.
 
-## M4 — Events — 🟡 partial
+## M4 — Events — ✅ done (build + test + human-reviewed server checkpoint)
 
-- Create (self-hosted and group-hosted), browse/filter, join/leave, cancel: `EventService` + `EventWebController` + `EventAPIController`. ✅
-- Free-tier plan limits (5 active events, 5 attendees/event, no private events) via `PlanLimitsService`, enforced server-side on both web and API paths. ✅
-- Non-host cannot edit/cancel (`EventService.assertCanManage`, `403` via `APIError.forbidden`). ✅
-- Boundary test for the 5-vs-6 active-event limit (`AppTests.testFreeUserCanHostExactlyFiveActiveEvents`) — the plan's own §5 flags exactly this as the likely bug class. ✅
-- **Not yet done**: htmx fragment responses (join/leave currently redirect the full page rather than swap an OOB fragment — see the note atop `EventWebController.swift`); the Tailwind CLI build (currently CDN-loaded in `layouts/base.leaf`); a real city/venue autocomplete widget on the create-event form (currently hidden lat/lng inputs default to `0`); compiler verification.
+All 8 acceptance criteria from the plan (§3) are now implemented and each has a dedicated test in `AppTests.swift`:
+
+1. Free user capped at 5 active events, 6th rejected — `testFreeUserCanHostExactlyFiveActiveEvents`. ✅
+2. Free-tier event capped at 5 attendees, 6th join rejected — `testFreeTierEventAcceptsExactlyFiveAttendees`. ✅
+3. Free user can't set an event `private` (server-side, not just UI) — `testFreeUserCannotCreatePrivateEvent` + `testPremiumUserCanCreatePrivateEvent` (positive case, confirms it's plan-gated not a blanket ban). ✅
+4. `/events` filters by category, city, venue, host, date, matching and excluding correctly — `testEventFilteringMatchesAndExcludesCorrectly`. ✅
+5. Event detail shows correct title/host/date/venue/description/attendees — `testEventDetailDTOHasCorrectFields`. ✅
+6. Join/leave updates via htmx swap, no full reload — new `partials/event-fragment.leaf`, extended inline by `pages/event-detail.leaf` for the normal render and rendered standalone by `EventWebController`'s `respondWithEventUpdate` when the request carries htmx's `HX-Request` header (a non-JS `<form>` submit still gets the old full-page redirect, kept as a fallback). ✅ The fragment test caught a real bug before it ever reached a browser: `hx-target="#event-fragment"` was being parsed as a Leaf tag (Leaf's `#` sigil has no concept of HTML/CSS syntax) — fixed with Leaf's `\#` escape. Server checkpoint: `/events/:id` visually confirmed rendering correctly (title, host, venue, description, "Sign in to join" fallback since M2's real sign-in isn't wired up yet) — no map or chat shown, both correctly out of scope here (chat is M5).
+7. Cancel sets `isCancelled = true`, row and attendee history survive — `testCancelEventSurvivesWithAttendeeHistory`. ✅
+8. Non-host can't edit/cancel, 403 — `testNonHostCannotCancelSomeoneElsesEvent`. ✅
+
+**All M4 acceptance criteria met.** **Not yet done** (explicitly out of scope for M4's own acceptance criteria, tracked as follow-ups): the Tailwind CLI build (currently CDN-loaded in `layouts/base.leaf`); a real city/venue autocomplete widget on the create-event form (currently hidden lat/lng inputs default to `0`); the Join/Leave/Cancel buttons themselves can't be exercised through a real browser session until M2's real Apple/Google sign-in is set up (their logic is fully tested — `EventService`/`PlanLimitsService` — and the fragment template is proven to render; only the live click-through is blocked on M2).
+
+PR #3's independent review found and this PR now fixes a real information-disclosure bug the htmx wiring introduced: `EventService.leave` — unlike `join`/`detail` — never called `assertVisible`, and `EventWebController.respondWithEventUpdate` renders the full event (title/venue/description/attendee list) straight into the `HX-Request` response, so a signed-in user who was never a member of a private group could fetch that group's private event details via `POST /events/:id/leave` (a harmless no-op attendee-row delete either way, previously masked because the old code path only ever redirected to a `GET` that re-checked visibility). Fixed in `EventService.leave`: a non-attendee is now visibility-checked exactly like `join`; an *existing* attendee who has since lost visibility (e.g. removed from the group) can still leave, so the fix doesn't strand a dangling attendee row. Covered by new test `testNonMemberCannotLeavePrivateGroupEventOrLeakDetails`. The review's other findings (missing venue/date coverage in the filtering test, missing date/description assertions in the DTO test) were also addressed; the `hx-confirm`-vs-`onsubmit` double-confirm-dialog question and the non-htmx-path error-rendering gap (`APIErrorMiddleware` only wraps `/api/v1`, so a web-path plan-limit rejection still falls through to Vapor's generic error page) are deferred as follow-ups — the latter predates this PR.
 
 ## M5 — Realtime chat — ⬜ not started
 
