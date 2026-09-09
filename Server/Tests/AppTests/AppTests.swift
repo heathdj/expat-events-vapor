@@ -1,4 +1,5 @@
 @testable import App
+import ExpatEventsAPI
 import XCTVapor
 import Fluent
 
@@ -26,7 +27,7 @@ final class AppTests: XCTestCase {
     /// DB connectivity.
     func testHealthCheckReturns200() async throws {
         try await withApp { app in
-            try await app.testing().test(.GET, "health") { res in
+            try await app.testable().test(.GET, "health") { res in
                 XCTAssertEqual(res.status, .ok)
             }
         }
