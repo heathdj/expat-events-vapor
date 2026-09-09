@@ -311,4 +311,38 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(stillActive?.isCancelled, false)
         }
     }
+
+    /// M4 acceptance criterion #6, the part a unit test can actually cover:
+    /// confirms `partials/event-fragment.leaf` renders without error and
+    /// with the right content. This is exactly the failure mode a plain
+    /// `swift build` can't catch — Leaf template errors only surface at
+    /// render time. Rendering the join/leave/cancel HTTP routes themselves
+    /// end-to-end would need a simulated authenticated session, which
+    /// isn't available here (sign-in is OAuth-only — no password/test
+    /// login route — and M2's real Apple/Google credentials aren't set up
+    /// in this environment either), so this renders the fragment template
+    /// directly instead of round-tripping through HTTP.
+    func testEventFragmentPartialRenders() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "fragment-host@example.com")
+            let attendee = try await makeUser(db: app.db, email: "fragment-attendee@example.com")
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(makeEventRequest(title: "Fragment Test Event"), hostUserID: try host.requireID())
+            _ = try await service.join(event, userID: try attendee.requireID())
+
+            let dto = try await service.fullDTO(for: event, requesterID: try attendee.requireID())
+            let req = Request(application: app, on: app.eventLoopGroup.any())
+            let view = try await req.view.render("partials/event-fragment", EventWebController.EventFragmentContext(
+                event: dto,
+                isSignedIn: true,
+                canManage: false
+            ))
+            let html = String(buffer: view.data)
+
+            XCTAssertTrue(html.contains(#"id="event-fragment""#), "Fragment root element missing.")
+            XCTAssertTrue(html.contains("Attendees (1)"), "Attendee count not rendered correctly.")
+            XCTAssertTrue(html.contains("/events/\(try event.requireID())/leave"), "Attending user should see a Leave form, not Join.")
+            XCTAssertFalse(html.contains("Cancel event"), "canManage: false should hide the cancel button.")
+        }
+    }
 }
