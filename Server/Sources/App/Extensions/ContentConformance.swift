@@ -10,18 +10,18 @@ import ExpatEventsAPI
 /// `Content` is just `Codable` + a couple of defaulted Vapor protocols, so
 /// these are all empty extensions — but the compiler needs them to accept
 /// e.g. `func me(req: Request) async throws -> UserDTO`.
-extension UserDTO: Content {}
-extension ProfileDTO: Content {}
-extension EventSummaryDTO: Content {}
-extension EventDTO: Content {}
-extension AttendeeDTO: Content {}
-extension GroupDTO: Content {}
-extension GroupMemberDTO: Content {}
-extension SubscriptionDTO: Content {}
-extension InvoiceDTO: Content {}
-extension ActivityFeedItemDTO: Content {}
-extension ChatMessageDTO: Content {}
-extension DataExportRequestDTO: Content {}
-extension AuthTokenResponse: Content {}
-extension CheckoutSessionResponse: Content {}
-extension APIError: Content {}
+extension UserDTO: @retroactive Content {}
+extension ProfileDTO: @retroactive Content {}
+extension EventSummaryDTO: @retroactive Content {}
+extension EventDTO: @retroactive Content {}
+extension AttendeeDTO: @retroactive Content {}
+extension GroupDTO: @retroactive Content {}
+extension GroupMemberDTO: @retroactive Content {}
+extension SubscriptionDTO: @retroactive Content {}
+extension InvoiceDTO: @retroactive Content {}
+extension ActivityFeedItemDTO: @retroactive Content {}
+extension ChatMessageDTO: @retroactive Content {}
+extension DataExportRequestDTO: @retroactive Content {}
+extension AuthTokenResponse: @retroactive Content {}
+extension CheckoutSessionResponse: @retroactive Content {}
+extension APIError: @retroactive Content {}
