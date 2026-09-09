@@ -30,7 +30,7 @@ Legend: ✅ built (not yet compiler-verified — see AGENTS.md "step zero") · �
 
 `PasskeyCredential` exists in the M1 data model so the schema won't shift later, but no WebAuthn ceremony, `/account/passkeys` UI, or `swift-server/swift-webauthn` integration yet. Per the plan's own escape hatch, this can ship as a documented fast-follow provided M2 fully covers sign-in on its own.
 
-## M4 — Events — ✅ done (pending compiler + human server checkpoint verification)
+## M4 — Events — ✅ done (build + test + human-reviewed server checkpoint)
 
 All 8 acceptance criteria from the plan (§3) are now implemented and each has a dedicated test in `AppTests.swift`:
 
