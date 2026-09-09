@@ -285,7 +285,7 @@ final class AppTests: XCTestCase {
 
             let attendeeStillThere = try await EventAttendee.query(on: app.db)
                 .filter(\.$event.$id == event.requireID())
-                .filter(\.$user.$id == try attendee.requireID())
+                .filter(\.$user.$id == attendee.requireID())
                 .count()
             XCTAssertEqual(attendeeStillThere, 1, "Attendee history must survive cancellation.")
         }
