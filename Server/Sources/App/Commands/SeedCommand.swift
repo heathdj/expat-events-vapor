@@ -9,14 +9,23 @@ import ExpatEventsAPI
 /// Idempotency strategy: every seeded row is looked up by a fixed, known
 /// identifier (email for users, slug for the group) before being created,
 /// so re-running finds and reuses existing rows instead of inserting more.
-struct SeedCommand: AsyncCommand {
+struct SeedCommand: Command {
     struct Signature: CommandSignature {}
 
     var help: String { "Seeds the database with development sample data." }
 
-    func run(using context: CommandContext, signature: Signature) async throws {
-        let db = context.application.db
-        let console = context.console
+    // `Command.run` is synchronous, but every seed helper below is async
+    // (they all await Fluent queries) — bridge with `makeFutureWithTask`
+    // and block this (command-line, not request-handling) thread until it
+    // finishes.
+    func run(using context: CommandContext, signature: Signature) throws {
+        try context.application.eventLoopGroup.any().makeFutureWithTask {
+            try await runAsync(application: context.application, console: context.console)
+        }.wait()
+    }
+
+    private func runAsync(application: Application, console: Console) async throws {
+        let db = application.db
 
         let alice = try await findOrCreateUser(
             db: db,

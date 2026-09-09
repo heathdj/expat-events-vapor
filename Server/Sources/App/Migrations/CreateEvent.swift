@@ -31,7 +31,7 @@ struct CreateEvent: AsyncMigration {
         // enforced at the database level, not just application logic.
         if let sql = database as? SQLDatabase {
             try await sql.raw("""
-            ALTER TABLE \(raw: Event.schema)
+            ALTER TABLE \(unsafeRaw: Event.schema)
             ADD CONSTRAINT event_exactly_one_host
             CHECK (num_nonnulls(host_user_id, host_group_id) = 1)
             """).run()

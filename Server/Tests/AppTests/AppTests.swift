@@ -37,10 +37,10 @@ final class AppTests: XCTestCase {
         try await withApp { app in
             let command = SeedCommand()
             let context = CommandContext(console: app.console, input: CommandInput(arguments: ["seed"]))
-            try await command.run(using: context, signature: SeedCommand.Signature())
+            try command.run(using: context, signature: SeedCommand.Signature())
             let countAfterFirstRun = try await User.query(on: app.db).count()
 
-            try await command.run(using: context, signature: SeedCommand.Signature())
+            try command.run(using: context, signature: SeedCommand.Signature())
             let countAfterSecondRun = try await User.query(on: app.db).count()
 
             XCTAssertEqual(countAfterFirstRun, countAfterSecondRun)

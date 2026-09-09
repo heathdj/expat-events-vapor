@@ -13,7 +13,7 @@ struct CreateFollow: AsyncMigration {
 
         if let sql = database as? SQLDatabase {
             try await sql.raw("""
-            ALTER TABLE \(raw: Follow.schema)
+            ALTER TABLE \(unsafeRaw: Follow.schema)
             ADD CONSTRAINT follow_no_self_follow
             CHECK (follower_id <> following_id)
             """).run()
