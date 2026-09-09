@@ -4,7 +4,7 @@ Tracking against [`docs/expatevents-mvp-plan.md`](docs/expatevents-mvp-plan.md)'
 
 Legend: ✅ built (not yet compiler-verified — see AGENTS.md "step zero") · 🟡 partial · ⬜ not started
 
-## M1 — Project scaffolding & data model — ✅ built and compiler-verified
+## M1 — Project scaffolding & data model — ✅ done (build + test + human-reviewed server checkpoint)
 
 - Monorepo layout: `Packages/ExpatEventsAPI`, `Server/`. ✅
 - Vapor project with Postgres via environment variables (`configure.swift`). ✅
@@ -13,7 +13,8 @@ Legend: ✅ built (not yet compiler-verified — see AGENTS.md "step zero") · �
 - README. ✅
 - `swift build` is clean (0 errors, 0 warnings from our own code — see `WARNINGS.md` for the third-party/tracked exceptions). ✅
 - `swift test` passes all 3 tests against real Postgres (`testHealthCheckReturns200`, `testFreeUserCanHostExactlyFiveActiveEvents`, `testSeedCommandIsIdempotent`) — criterion #4 (health check) and #3 (idempotent seed) both confirmed for real, not just written. ✅ Along the way, found and fixed real bugs: a missing `import ExpatEventsAPI` and a wrong XCTVapor API name in the test file, a dev Postgres on the default port colliding with another Postgres already running on this machine (moved to host port 5433 — see `docker-compose.yml`/`.env.example`), and a test that crashed invoking `SeedCommand` without setting `context.application` first.
-- **Not yet done**: criterion #5 (a clean checkout producing a *running* server, not just passing tests) — next up is `swift run App migrate --yes && swift run App seed && swift run App serve` as an actual human-reviewable checkpoint, then PR #1.
+- Criterion #5 confirmed: `swift run App migrate --yes` (29 migrations) → `swift run App seed` (3 users, 1 group, 2 events) → `swift run App serve`, then `GET /health` returned `{"status":"ok","database":"connected"}` and the user visually reviewed `/events` and `/login` in a browser (intentionally unstyled beyond Tailwind's CDN defaults at this stage — noted as M4 follow-up). ✅
+- **All M1 acceptance criteria met.** Open items are tracked in `WARNINGS.md` (nothing launch-blocking) rather than here.
 
 ## M2 — Auth: Apple + Google — 🟡 partial
 
