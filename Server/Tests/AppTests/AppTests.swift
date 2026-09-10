@@ -518,4 +518,89 @@ final class AppTests: XCTestCase {
             }
         }
     }
+
+    /// Independent review of this PR's fix flagged that it silently
+    /// restores more than just the nav: before the fix, `GET /events/:id`
+    /// always saw `requesterID == nil` too (same root cause), so
+    /// `EventService.assertVisible`/`assertCanManage` were being
+    /// evaluated as fully anonymous for *every* visitor — meaning a
+    /// private group event's own members couldn't view it via the direct
+    /// URL, and a host could never see their own "Cancel event" control,
+    /// regardless of being signed in. This pins down both now-correct
+    /// cases (and the still-correctly-rejected outsider/anonymous cases)
+    /// so they don't silently regress again.
+    func testSignedInSessionRestoresGroupEventVisibilityAndManageControls() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "detail-owner@example.com", plan: .premium)
+            let member = try await makeUser(db: app.db, email: "detail-member@example.com")
+            let outsider = try await makeUser(db: app.db, email: "detail-outsider@example.com")
+
+            let group = Group(name: "Detail Test Group", slug: "detail-test-group-\(UUID())", description: "Members only", ownerID: try owner.requireID())
+            try await group.save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try owner.requireID(), role: .owner).save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try member.requireID(), role: .member).save(on: app.db)
+
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(
+                CreateEventRequest(
+                    title: "Private Group Detail Event",
+                    description: "Sensitive details",
+                    category: .culture,
+                    date: Date().addingTimeInterval(3600),
+                    cityAddress: "Test City", cityLat: 0, cityLng: 0,
+                    venueAddress: "Secret Venue", venueLat: 0, venueLng: 0,
+                    hostGroupID: try group.requireID(),
+                    visibility: .private
+                ),
+                hostUserID: try owner.requireID()
+            )
+            let path = "/events/\(try event.requireID())"
+
+            func cookie(for user: User) async throws -> String {
+                var data = SessionData()
+                data["_UserSession"] = try user.requireID().uuidString
+                let key = SessionID(string: UUID().uuidString)
+                try await SessionRecord(key: key, data: data).create(on: app.db)
+                return "vapor-session=\(key.string)"
+            }
+
+            // The owner (host) sees the event and their own manage control.
+            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: owner)]) { res in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertTrue(res.body.string.contains("Cancel event"), "The host should see the manage/cancel control on their own event.")
+            }
+
+            // A plain group member sees the event but not manage controls
+            // — they're a member, not the owner/moderator.
+            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: member)]) { res in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertTrue(res.body.string.contains("Private Group Detail Event"), "A group member should be able to view their group's private event.")
+                XCTAssertFalse(res.body.string.contains("Cancel event"), "A plain member is not the host — no manage control.")
+            }
+
+            // A signed-in outsider (real session, just not a group member)
+            // still gets rejected — assertVisible throws APIError.notFound
+            // either way. NOTE: on this web (non-/api/v1) path, that comes
+            // back as a 500, not a 404 — APIError doesn't conform to
+            // AbortError, so Vapor's default ErrorMiddleware falls through
+            // to its generic-500 case. This is the same pre-existing,
+            // already-tracked gap noted in MILESTONES.md's M4 section
+            // (APIErrorMiddleware only wraps /api/v1); asserting the real
+            // status here (rather than the "should be" 404) so this test
+            // stays honest, and so a future fix for that gap has to come
+            // back and update this assertion rather than silently pass.
+            // What actually matters and IS correctly enforced either way:
+            // the response never contains the event's title/venue/details.
+            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: outsider)]) { res in
+                XCTAssertEqual(res.status, .internalServerError, "A signed-in non-member must not see a private group event either (see note above on the status code itself).")
+                XCTAssertFalse(res.body.string.contains("Private Group Detail Event"), "A rejected outsider must never see the event's details, whatever the status code.")
+            }
+
+            // And a fully anonymous visitor, same rejection, same caveat.
+            try await app.test(.GET, path) { res in
+                XCTAssertEqual(res.status, .internalServerError, "An anonymous visitor must not see a private group event either (see note above).")
+                XCTAssertFalse(res.body.string.contains("Private Group Detail Event"), "An anonymous visitor must never see the event's details, whatever the status code.")
+            }
+        }
+    }
 }
