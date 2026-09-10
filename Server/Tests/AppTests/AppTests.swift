@@ -480,4 +480,42 @@ final class AppTests: XCTestCase {
             }
         }
     }
+
+    /// Found by a real browser click-through after M2's Google sign-in
+    /// verification: the nav never flipped to the signed-in state, even
+    /// right after a successful sign-in redirected to /events. Root cause
+    /// was that `GET /events` and `GET /events/:id` sat outside
+    /// `User.sessionAuthenticator()` entirely (only the write routes had
+    /// it), so `req.auth.get(User.self)` was always nil there regardless
+    /// of a valid session cookie, and `isSignedIn` was hard-wired false.
+    /// This creates a real session the same way `SessionsMiddleware`
+    /// does (there's no test login route — sign-in is OAuth-only, see
+    /// `testEventFragmentPartialRenders`) and round-trips it through a
+    /// real HTTP request, so it actually exercises the route/middleware
+    /// wiring rather than just the template.
+    func testSignedInSessionFlipsEventsNavToSignedInState() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "nav-session@example.com")
+
+            var data = SessionData()
+            data["_UserSession"] = try user.requireID().uuidString
+            let sessionKey = SessionID(string: UUID().uuidString)
+            try await SessionRecord(key: sessionKey, data: data).create(on: app.db)
+
+            try await app.test(.GET, "/events", headers: ["Cookie": "vapor-session=\(sessionKey.string)"]) { res in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains(#"action="/logout""#), "A signed-in visitor should see the Sign out form in the nav.")
+                XCTAssertFalse(html.contains(">Sign in<"), "A signed-in visitor should not still see the Sign in link.")
+            }
+
+            // And a request with no cookie at all still gets the signed-out nav.
+            try await app.test(.GET, "/events") { res in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains(">Sign in<"), "An anonymous visitor should see the Sign in link.")
+                XCTAssertFalse(html.contains(#"action="/logout""#), "An anonymous visitor should not see a Sign out form.")
+            }
+        }
+    }
 }

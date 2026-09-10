@@ -52,8 +52,16 @@ struct EventWebController: RouteCollection {
     }
 
     func boot(routes: RoutesBuilder) throws {
-        routes.get("events", use: dashboard)
-        routes.get("events", ":eventID", use: detail)
+        // Signed-out visitors can browse events, so these two stay outside
+        // guardMiddleware() — but they still need the session authenticator
+        // run in front of them, or req.auth.get(User.self) never gets
+        // populated from a valid session cookie and isSignedIn is hard-wired
+        // false on every page load, even for someone who just signed in.
+        // (Found via a real click-through: the nav never flipped to
+        // "Sign out" because of exactly this.)
+        let optionallyAuthenticated = routes.grouped(User.sessionAuthenticator())
+        optionallyAuthenticated.get("events", use: dashboard)
+        optionallyAuthenticated.get("events", ":eventID", use: detail)
 
         let authenticated = routes.grouped(User.sessionAuthenticator(), User.guardMiddleware(), NotSuspendedMiddleware())
         authenticated.get("events", "new", use: newForm)
