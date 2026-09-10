@@ -455,4 +455,152 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(remainingAttendance, 0, "A former member who leaves should have their attendee row removed, not left dangling.")
         }
     }
+
+    // MARK: - M2 verification
+
+    /// PR #2's independent review flagged this as missing: an invalid
+    /// provider token must be rejected as `.invalidProviderToken`, never
+    /// crash or (worse) silently authenticate. There's no way to forge a
+    /// token Google's own verification would accept, so this exercises the
+    /// real failure path end-to-end against Google's `tokeninfo` endpoint
+    /// rather than mocking it away — a garbage string is exactly what a
+    /// malicious or buggy client could send `POST /api/v1/auth/google`.
+    /// Requires network access to `oauth2.googleapis.com`.
+    func testGoogleIdentityTokenVerifierRejectsInvalidToken() async throws {
+        try await withApp { app in
+            do {
+                _ = try await GoogleIdentityTokenVerifier.verify(
+                    idToken: "not-a-real-token",
+                    expectedAudience: "irrelevant-audience-for-this-test",
+                    client: app.client
+                )
+                XCTFail("A garbage token should have been rejected, not verified.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "invalid_provider_token")
+            }
+        }
+    }
+
+    /// Found by a real browser click-through after M2's Google sign-in
+    /// verification: the nav never flipped to the signed-in state, even
+    /// right after a successful sign-in redirected to /events. Root cause
+    /// was that `GET /events` and `GET /events/:id` sat outside
+    /// `User.sessionAuthenticator()` entirely (only the write routes had
+    /// it), so `req.auth.get(User.self)` was always nil there regardless
+    /// of a valid session cookie, and `isSignedIn` was hard-wired false.
+    /// This creates a real session the same way `SessionsMiddleware`
+    /// does (there's no test login route — sign-in is OAuth-only, see
+    /// `testEventFragmentPartialRenders`) and round-trips it through a
+    /// real HTTP request, so it actually exercises the route/middleware
+    /// wiring rather than just the template.
+    func testSignedInSessionFlipsEventsNavToSignedInState() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "nav-session@example.com")
+
+            var data = SessionData()
+            data["_UserSession"] = try user.requireID().uuidString
+            let sessionKey = SessionID(string: UUID().uuidString)
+            try await SessionRecord(key: sessionKey, data: data).create(on: app.db)
+
+            try await app.test(.GET, "/events", headers: ["Cookie": "vapor-session=\(sessionKey.string)"]) { res in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains(#"action="/logout""#), "A signed-in visitor should see the Sign out form in the nav.")
+                XCTAssertFalse(html.contains(">Sign in<"), "A signed-in visitor should not still see the Sign in link.")
+            }
+
+            // And a request with no cookie at all still gets the signed-out nav.
+            try await app.test(.GET, "/events") { res in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains(">Sign in<"), "An anonymous visitor should see the Sign in link.")
+                XCTAssertFalse(html.contains(#"action="/logout""#), "An anonymous visitor should not see a Sign out form.")
+            }
+        }
+    }
+
+    /// Independent review of this PR's fix flagged that it silently
+    /// restores more than just the nav: before the fix, `GET /events/:id`
+    /// always saw `requesterID == nil` too (same root cause), so
+    /// `EventService.assertVisible`/`assertCanManage` were being
+    /// evaluated as fully anonymous for *every* visitor — meaning a
+    /// private group event's own members couldn't view it via the direct
+    /// URL, and a host could never see their own "Cancel event" control,
+    /// regardless of being signed in. This pins down both now-correct
+    /// cases (and the still-correctly-rejected outsider/anonymous cases)
+    /// so they don't silently regress again.
+    func testSignedInSessionRestoresGroupEventVisibilityAndManageControls() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "detail-owner@example.com", plan: .premium)
+            let member = try await makeUser(db: app.db, email: "detail-member@example.com")
+            let outsider = try await makeUser(db: app.db, email: "detail-outsider@example.com")
+
+            let group = Group(name: "Detail Test Group", slug: "detail-test-group-\(UUID())", description: "Members only", ownerID: try owner.requireID())
+            try await group.save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try owner.requireID(), role: .owner).save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try member.requireID(), role: .member).save(on: app.db)
+
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(
+                CreateEventRequest(
+                    title: "Private Group Detail Event",
+                    description: "Sensitive details",
+                    category: .culture,
+                    date: Date().addingTimeInterval(3600),
+                    cityAddress: "Test City", cityLat: 0, cityLng: 0,
+                    venueAddress: "Secret Venue", venueLat: 0, venueLng: 0,
+                    hostGroupID: try group.requireID(),
+                    visibility: .private
+                ),
+                hostUserID: try owner.requireID()
+            )
+            let path = "/events/\(try event.requireID())"
+
+            func cookie(for user: User) async throws -> String {
+                var data = SessionData()
+                data["_UserSession"] = try user.requireID().uuidString
+                let key = SessionID(string: UUID().uuidString)
+                try await SessionRecord(key: key, data: data).create(on: app.db)
+                return "vapor-session=\(key.string)"
+            }
+
+            // The owner (host) sees the event and their own manage control.
+            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: owner)]) { res in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertTrue(res.body.string.contains("Cancel event"), "The host should see the manage/cancel control on their own event.")
+            }
+
+            // A plain group member sees the event but not manage controls
+            // — they're a member, not the owner/moderator.
+            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: member)]) { res in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertTrue(res.body.string.contains("Private Group Detail Event"), "A group member should be able to view their group's private event.")
+                XCTAssertFalse(res.body.string.contains("Cancel event"), "A plain member is not the host — no manage control.")
+            }
+
+            // A signed-in outsider (real session, just not a group member)
+            // still gets rejected — assertVisible throws APIError.notFound
+            // either way. NOTE: on this web (non-/api/v1) path, that comes
+            // back as a 500, not a 404 — APIError doesn't conform to
+            // AbortError, so Vapor's default ErrorMiddleware falls through
+            // to its generic-500 case. This is the same pre-existing,
+            // already-tracked gap noted in MILESTONES.md's M4 section
+            // (APIErrorMiddleware only wraps /api/v1); asserting the real
+            // status here (rather than the "should be" 404) so this test
+            // stays honest, and so a future fix for that gap has to come
+            // back and update this assertion rather than silently pass.
+            // What actually matters and IS correctly enforced either way:
+            // the response never contains the event's title/venue/details.
+            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: outsider)]) { res in
+                XCTAssertEqual(res.status, .internalServerError, "A signed-in non-member must not see a private group event either (see note above on the status code itself).")
+                XCTAssertFalse(res.body.string.contains("Private Group Detail Event"), "A rejected outsider must never see the event's details, whatever the status code.")
+            }
+
+            // And a fully anonymous visitor, same rejection, same caveat.
+            try await app.test(.GET, path) { res in
+                XCTAssertEqual(res.status, .internalServerError, "An anonymous visitor must not see a private group event either (see note above).")
+                XCTAssertFalse(res.body.string.contains("Private Group Detail Event"), "An anonymous visitor must never see the event's details, whatever the status code.")
+            }
+        }
+    }
 }
