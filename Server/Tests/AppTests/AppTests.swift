@@ -27,7 +27,7 @@ final class AppTests: XCTestCase {
     /// DB connectivity.
     func testHealthCheckReturns200() async throws {
         try await withApp { app in
-            try await app.testable().test(.GET, "health") { res in
+            try await app.testable().test(.GET, "health") { res async in
                 XCTAssertEqual(res.status, .ok)
             }
         }
@@ -502,7 +502,7 @@ final class AppTests: XCTestCase {
             let sessionKey = SessionID(string: UUID().uuidString)
             try await SessionRecord(key: sessionKey, data: data).create(on: app.db)
 
-            try await app.test(.GET, "/events", headers: ["Cookie": "vapor-session=\(sessionKey.string)"]) { res in
+            try await app.test(.GET, "/events", headers: ["Cookie": "vapor-session=\(sessionKey.string)"]) { res async in
                 XCTAssertEqual(res.status, .ok)
                 let html = res.body.string
                 XCTAssertTrue(html.contains(#"action="/logout""#), "A signed-in visitor should see the Sign out form in the nav.")
@@ -510,7 +510,7 @@ final class AppTests: XCTestCase {
             }
 
             // And a request with no cookie at all still gets the signed-out nav.
-            try await app.test(.GET, "/events") { res in
+            try await app.test(.GET, "/events") { res async in
                 XCTAssertEqual(res.status, .ok)
                 let html = res.body.string
                 XCTAssertTrue(html.contains(">Sign in<"), "An anonymous visitor should see the Sign in link.")
@@ -565,14 +565,14 @@ final class AppTests: XCTestCase {
             }
 
             // The owner (host) sees the event and their own manage control.
-            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: owner)]) { res in
+            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: owner)]) { res async in
                 XCTAssertEqual(res.status, .ok)
                 XCTAssertTrue(res.body.string.contains("Cancel event"), "The host should see the manage/cancel control on their own event.")
             }
 
             // A plain group member sees the event but not manage controls
             // — they're a member, not the owner/moderator.
-            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: member)]) { res in
+            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: member)]) { res async in
                 XCTAssertEqual(res.status, .ok)
                 XCTAssertTrue(res.body.string.contains("Private Group Detail Event"), "A group member should be able to view their group's private event.")
                 XCTAssertFalse(res.body.string.contains("Cancel event"), "A plain member is not the host — no manage control.")
@@ -591,13 +591,13 @@ final class AppTests: XCTestCase {
             // back and update this assertion rather than silently pass.
             // What actually matters and IS correctly enforced either way:
             // the response never contains the event's title/venue/details.
-            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: outsider)]) { res in
+            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: outsider)]) { res async in
                 XCTAssertEqual(res.status, .internalServerError, "A signed-in non-member must not see a private group event either (see note above on the status code itself).")
                 XCTAssertFalse(res.body.string.contains("Private Group Detail Event"), "A rejected outsider must never see the event's details, whatever the status code.")
             }
 
             // And a fully anonymous visitor, same rejection, same caveat.
-            try await app.test(.GET, path) { res in
+            try await app.test(.GET, path) { res async in
                 XCTAssertEqual(res.status, .internalServerError, "An anonymous visitor must not see a private group event either (see note above).")
                 XCTAssertFalse(res.body.string.contains("Private Group Detail Event"), "An anonymous visitor must never see the event's details, whatever the status code.")
             }
