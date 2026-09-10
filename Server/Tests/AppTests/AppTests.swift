@@ -455,4 +455,29 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(remainingAttendance, 0, "A former member who leaves should have their attendee row removed, not left dangling.")
         }
     }
+
+    // MARK: - M2 verification
+
+    /// PR #2's independent review flagged this as missing: an invalid
+    /// provider token must be rejected as `.invalidProviderToken`, never
+    /// crash or (worse) silently authenticate. There's no way to forge a
+    /// token Google's own verification would accept, so this exercises the
+    /// real failure path end-to-end against Google's `tokeninfo` endpoint
+    /// rather than mocking it away — a garbage string is exactly what a
+    /// malicious or buggy client could send `POST /api/v1/auth/google`.
+    /// Requires network access to `oauth2.googleapis.com`.
+    func testGoogleIdentityTokenVerifierRejectsInvalidToken() async throws {
+        try await withApp { app in
+            do {
+                _ = try await GoogleIdentityTokenVerifier.verify(
+                    idToken: "not-a-real-token",
+                    expectedAudience: "irrelevant-audience-for-this-test",
+                    client: app.client
+                )
+                XCTFail("A garbage token should have been rejected, not verified.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "invalid_provider_token")
+            }
+        }
+    }
 }
