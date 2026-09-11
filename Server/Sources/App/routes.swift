@@ -8,6 +8,7 @@ func routes(_ app: Application) throws {
     // inside each controller (architecture §6).
     try app.register(collection: AuthWebController())
     try app.register(collection: EventWebController())
+    try app.register(collection: ChatWebController())
 
     // `/api/v1` — bearer-token authenticated, wrapped in APIErrorMiddleware
     // so every error response is the shared `{code, message}` shape

@@ -12,6 +12,7 @@ public func configure(_ app: Application) async throws {
     try configureDatabase(app)
     try configureSessions(app)
     try configureJWT(app)
+    app.chatRoomRegistry = ChatRoomRegistry()
 
     app.views.use(.leaf)
     app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))

@@ -12,9 +12,45 @@
     #extend("partials/event-fragment")
 
     <!--
-      Realtime chat (architecture §8, M5) is not yet built — this is where
-      the htmx `ws-connect` element and message history will render.
+      Realtime chat (architecture §8, M5). hx-ext="ws" + ws-connect opens
+      the socket ChatWebController serves; every message that arrives over
+      it is a pre-rendered HTML fragment (see chat-message-oob.leaf) that
+      htmx appends into \#chat-messages via hx-swap-oob — no hand-written
+      JS for receiving. ws-send on the form below sends its fields as a
+      JSON object over the same socket on submit (htmx's ws extension's
+      default behavior), matching SendChatMessageRequest{text, parentID}.
+
+      Reply-threading (M5 criterion \#3) is fully implemented and tested
+      server-side — a message with parentID set renders visually nested
+      here — but there's no click-to-reply affordance in this pass's UI
+      yet; sending a reply currently requires the API directly. A small,
+      explicit scope trim (like M4's city/venue autocomplete), not an
+      oversight.
     -->
+    <div id="chat" class="mt-8 border-t border-gray-200 pt-6" hx-ext="ws" ws-connect="/events/#(event.id)/chat/ws">
+        <h2 class="text-lg font-medium">Chat</h2>
+        <div id="chat-messages" class="mt-3 space-y-2 max-h-96 overflow-y-auto">
+            #for(message in chatHistory):
+            #if(message.parentID):
+            <div class="chat-message ml-6 border-l-2 border-gray-200 pl-3" data-message-id="#(message.id)">
+            #else:
+            <div class="chat-message" data-message-id="#(message.id)">
+            #endif
+                <span class="font-medium text-sm">#(message.displayName)</span>
+                <p class="text-sm text-gray-700">#(message.text)</p>
+            </div>
+            #endfor
+        </div>
+
+        #if(isSignedIn):
+        <form ws-send onsubmit="setTimeout(() => this.reset())" class="mt-3 flex gap-2">
+            <input type="text" name="text" placeholder="Message..." class="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm" required autocomplete="off">
+            <button type="submit" class="bg-gray-900 text-white px-4 py-2 rounded-md text-sm hover:bg-gray-700">Send</button>
+        </form>
+        #else:
+        <p class="mt-3 text-sm text-gray-500"><a href="/login" class="underline">Sign in</a> to join the chat.</p>
+        #endif
+    </div>
 </div>
 #endexport
 #endextend

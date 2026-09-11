@@ -1,0 +1,26 @@
+<!--
+  One live chat message, rendered standalone by ChatWebController and sent
+  as a WebSocket text frame (M5, architecture §8's htmx-HTML-swap client
+  path — see ChatRoomRegistry's doc comment on why this is HTML, not the
+  shared ChatEnvelope JSON type). hx-swap-oob="beforeend:\#chat-messages"
+  is what makes htmx's `ws` extension append this into the existing
+  message list in place, rather than needing it to be a response to any
+  particular request.
+
+  The inner markup here is intentionally identical to the \#for loop in
+  pages/event-detail.leaf that renders the initial history on page load —
+  kept as plain duplicated markup rather than a shared \#extend'd partial,
+  since \#extend's context-sharing behavior inside a \#for loop wasn't
+  something this build could verify against a real compiler; if you change
+  one, change the other.
+-->
+<div hx-swap-oob="beforeend:\#chat-messages">
+    #if(message.parentID):
+    <div class="chat-message ml-6 border-l-2 border-gray-200 pl-3" data-message-id="#(message.id)">
+    #else:
+    <div class="chat-message" data-message-id="#(message.id)">
+    #endif
+        <span class="font-medium text-sm">#(message.displayName)</span>
+        <p class="text-sm text-gray-700">#(message.text)</p>
+    </div>
+</div>
