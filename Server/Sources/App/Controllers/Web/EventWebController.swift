@@ -29,12 +29,14 @@ struct EventWebController: RouteCollection {
         let event: EventDTO
         let isSignedIn: Bool
         let canManage: Bool
-        /// M5: rendered once on page load so a client sees full history
-        /// immediately, before (or even without) the chat WebSocket ever
-        /// connecting — ChatWebController separately sends this same
-        /// history again over the socket itself on connect, for a client
-        /// that opens the socket without a full page reload (see its own
-        /// doc comment).
+        /// M5: this is the *only* place chat history gets rendered — the
+        /// chat WebSocket (ChatWebController.handle) deliberately does not
+        /// replay history on connect (an earlier version did; removed after
+        /// a human server-checkpoint found it duplicated every message on
+        /// every reload, since a fresh socket opens on every full page
+        /// load and this history was already rendered into that same
+        /// page). This field alone is what satisfies M5 acceptance
+        /// criterion #6 ("reload... still shows full history").
         let chatHistory: [ChatMessageDTO]
     }
 

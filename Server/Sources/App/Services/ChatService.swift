@@ -2,10 +2,11 @@ import Fluent
 import Vapor
 import ExpatEventsAPI
 
-/// Shared by the WebSocket route and (for history/fallback-poll reads)
-/// both the web and `/api/v1` surfaces — same "one service, both
-/// surfaces" pattern `EventService` already established for M4 (architecture
-/// §3, §8, M5).
+/// Used by the WebSocket route and by `EventWebController`'s history read
+/// on page load. Shaped after `EventService`'s "one service, both surfaces"
+/// pattern (architecture §3, §8, M5) so that a future `/api/v1` chat
+/// surface can reuse it directly — no such route exists yet in this
+/// milestone, only the web path does.
 struct ChatService {
     let db: Database
 
@@ -25,6 +26,14 @@ struct ChatService {
     /// `ChatRoomRegistry` immediately after this returns — persistence and
     /// broadcast are two separate steps on purpose, so a broadcast can
     /// never go out for a message that didn't actually save.
+    ///
+    /// Known narrow gap (independent review, post the history-replay-
+    /// removal fix): a message sent in the brief window between a
+    /// viewer's page finishing its server-rendered history and that same
+    /// viewer's own socket completing its handshake is neither in their
+    /// rendered page nor delivered live to them — only a later reload
+    /// picks it up. Accepted rather than reintroducing on-connect replay,
+    /// which is what caused the duplicate-message bug this fix resolved.
     ///
     /// `parentID`, if given, must reference an existing message on this
     /// *same* event — M5 acceptance criterion #3 is "one level of reply
@@ -48,9 +57,11 @@ struct ChatService {
     }
 
     /// M5 acceptance criterion #2/#6: the full persisted history, oldest
-    /// first — what both a fresh page load and a reconnect-after-drop use
-    /// to repaint the thread, so a client that never sees a single
-    /// WebSocket frame still sees exactly the same conversation.
+    /// first — this is what EventWebController.detail renders straight
+    /// into the page on every load (the socket itself no longer replays
+    /// history; see the doc comment on `send` above for why), so a client
+    /// that never sees a single WebSocket frame still sees exactly the
+    /// same conversation.
     func history(eventID: UUID) async throws -> [ChatMessage] {
         try await ChatMessage.query(on: db)
             .filter(\.$event.$id == eventID)

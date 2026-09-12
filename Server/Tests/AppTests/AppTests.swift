@@ -805,4 +805,45 @@ final class AppTests: XCTestCase {
             XCTAssertTrue(emptyHTML.contains("Sign in</a> to join the chat"), "Signed-out visitor should see the sign-in prompt instead of a compose form.")
         }
     }
+
+    /// Independent review (pre-PR) found the test above only ever
+    /// rendered the page, never the standalone live-broadcast partial
+    /// ChatWebController actually sends over the socket — despite a doc
+    /// comment claiming both were covered. This closes that gap directly,
+    /// and also pins down the DOM-shape bug the same review caught: an
+    /// earlier version of chat-message-oob.leaf put hx-swap-oob on an
+    /// outer wrapper div rather than the .chat-message element itself,
+    /// which (per htmx's own oobSwap behavior — it clones whichever
+    /// element actually carries hx-swap-oob) would have inserted an extra
+    /// wrapper as a direct child of #chat-messages instead of the message
+    /// element landing there directly, unlike page-load-rendered messages.
+    func testChatMessageOOBPartialRendersWithSwapAttributeOnMessageElement() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "chat-oob-host@example.com")
+            let dto = ChatMessageDTO(
+                id: UUID(),
+                eventID: UUID(),
+                userID: try host.requireID(),
+                displayName: host.displayName,
+                photoURL: host.photoURL,
+                parentID: nil,
+                text: "a live message",
+                createdAt: Date()
+            )
+            struct Context: Encodable { let message: ChatMessageDTO }
+            let req = Request(application: app, on: app.eventLoopGroup.any())
+            let view = try await req.view.render("partials/chat-message-oob", Context(message: dto))
+            let html = String(buffer: view.data)
+
+            XCTAssertTrue(html.contains("a live message"), "Message text missing from the OOB partial.")
+            // The bug an independent review caught: hx-swap-oob must be on
+            // the SAME element as data-message-id, not a separate wrapper
+            // div — htmx clones whichever element actually carries
+            // hx-swap-oob, so a wrapper would land one DOM level too deep.
+            XCTAssertTrue(
+                html.contains(#"data-message-id="\#(dto.id)" hx-swap-oob="beforeend:#chat-messages""#),
+                "hx-swap-oob must be on the same element as data-message-id, not a wrapper div."
+            )
+        }
+    }
 }
