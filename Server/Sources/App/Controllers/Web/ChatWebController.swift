@@ -10,12 +10,13 @@ import ExpatEventsAPI
 /// `HX-Request` branching) is different enough in shape that folding it
 /// into `EventWebController` would mostly add noise there.
 struct ChatWebController: RouteCollection {
-    /// Leaf render context for one message — used both for the initial
-    /// history replayed over a freshly-opened socket and for a live
-    /// broadcast; `partials/chat-message-oob.leaf` is the single template
-    /// both paths render (see its own doc comment for why the *page*
-    /// load's history loop duplicates this markup inline instead of
-    /// sharing it via `#extend`).
+    /// Leaf render context for one live-broadcast message;
+    /// `partials/chat-message-oob.leaf` is the template it renders (see
+    /// that partial's own doc comment for why the *page* load's history
+    /// loop duplicates this same markup inline instead of sharing it via
+    /// `#extend`). Not used for history replay — `handle` below
+    /// deliberately doesn't replay history over the socket; see its doc
+    /// comment.
     private struct MessageContext: Encodable {
         let message: ChatMessageDTO
     }
@@ -77,24 +78,19 @@ struct ChatWebController: RouteCollection {
         let registry = req.application.chatRoomRegistry
         let connectionID = await registry.join(eventID: eventID, userID: userID, socket: ws)
 
-        // M5 acceptance criterion #2 (the live-socket half): the client
-        // also gets full history rendered directly into the page on every
-        // fresh load (EventWebController.detail's chatHistory), but
-        // replaying it again here too means a client that opens the
-        // socket without a full page reload — a reconnect after a drop,
-        // e.g. — still sees the full thread rather than only messages
-        // sent from this point forward. Each message is sent as its own
-        // OOB-wrapped frame (append is idempotent-ish for a client that
-        // already has some of these rendered from the page load — a
-        // small, accepted amount of possible visual duplication on
-        // reconnect, not attempted to be deduplicated client-side here).
-        if let history = try? await ChatService(db: req.db).history(eventID: eventID) {
-            for message in history {
-                guard let dto = try? message.toDTO(), let html = try? await Self.render(req: req, dto: dto) else { continue }
-                try? await ws.send(html)
-            }
-        }
-
+        // Deliberately does NOT replay history over the socket on connect.
+        // An earlier version did (reasoning: "a client that reconnects
+        // without a full page reload still sees the full thread"), but a
+        // human server-checkpoint caught the real consequence: htmx's
+        // ws-connect opens a fresh socket on every full page load, and
+        // EventWebController.detail's chatHistory has *already* rendered
+        // that same history straight into the page for that same load —
+        // so replaying it again here duplicated every message on every
+        // ordinary reload, not just some rare drop-and-reconnect case.
+        // M5 acceptance criterion #6 ("reloading... still shows full
+        // history") is fully satisfied by that server-rendered page load
+        // alone; this socket's job from here on is strictly new messages
+        // sent from this point forward, not a history replay.
         ws.onText { _, text in
             await Self.receive(text: text, eventID: eventID, userID: userID, req: req, registry: registry)
         }
