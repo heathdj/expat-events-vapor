@@ -1,0 +1,8 @@
+<!--
+  Unused — superseded by chat-message-oob.leaf and the inline #for loop
+  in pages/event-detail.leaf (see chat-message-oob.leaf's doc comment for
+  why the markup is duplicated inline rather than shared via #extend).
+  Left in place rather than deleted (a file-deletion permission hiccup
+  during this build), but nothing renders it. Safe to actually delete
+  whenever convenient.
+-->

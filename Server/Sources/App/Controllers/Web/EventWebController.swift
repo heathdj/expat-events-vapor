@@ -29,6 +29,15 @@ struct EventWebController: RouteCollection {
         let event: EventDTO
         let isSignedIn: Bool
         let canManage: Bool
+        /// M5: this is the *only* place chat history gets rendered — the
+        /// chat WebSocket (ChatWebController.handle) deliberately does not
+        /// replay history on connect (an earlier version did; removed after
+        /// a human server-checkpoint found it duplicated every message on
+        /// every reload, since a fresh socket opens on every full page
+        /// load and this history was already rendered into that same
+        /// page). This field alone is what satisfies M5 acceptance
+        /// criterion #6 ("reload... still shows full history").
+        let chatHistory: [ChatMessageDTO]
     }
 
     /// Same shape as `EventDetailPageContext` minus the page-level `title`
@@ -97,11 +106,18 @@ struct EventWebController: RouteCollection {
         try await service.assertVisible(event, to: requesterID)
         let dto = try await service.fullDTO(for: event, requesterID: requesterID)
         let canManage = (try? await service.assertCanManage(event, requesterID: requesterID ?? UUID())) != nil
+        // Chat visibility is intentionally the exact same assertVisible
+        // call already made above for the event itself (M5 criteria #4/#5
+        // reuse EventService.assertVisible via ChatService — see its own
+        // doc comment) — no separate check needed here.
+        let chatMessages = try await ChatService(db: req.db).history(eventID: try event.requireID())
+        let chatHistory = try chatMessages.map { try $0.toDTO() }
         return try await req.view.render("pages/event-detail", EventDetailPageContext(
             title: dto.title,
             event: dto,
             isSignedIn: user != nil,
-            canManage: canManage
+            canManage: canManage,
+            chatHistory: chatHistory
         ))
     }
 

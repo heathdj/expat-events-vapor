@@ -27,7 +27,7 @@ final class AppTests: XCTestCase {
     /// DB connectivity.
     func testHealthCheckReturns200() async throws {
         try await withApp { app in
-            try await app.testable().test(.GET, "health") { res in
+            try await app.testable().test(.GET, "health") { res async in
                 XCTAssertEqual(res.status, .ok)
             }
         }
@@ -375,7 +375,8 @@ final class AppTests: XCTestCase {
                 title: dto.title,
                 event: dto,
                 isSignedIn: true,
-                canManage: false
+                canManage: false,
+                chatHistory: []
             ))
             let pageHTML = String(buffer: pageView.data)
             XCTAssertTrue(pageHTML.contains(#"id="event-fragment""#), "Full page should include the extended fragment.")
@@ -502,7 +503,7 @@ final class AppTests: XCTestCase {
             let sessionKey = SessionID(string: UUID().uuidString)
             try await SessionRecord(key: sessionKey, data: data).create(on: app.db)
 
-            try await app.test(.GET, "/events", headers: ["Cookie": "vapor-session=\(sessionKey.string)"]) { res in
+            try await app.test(.GET, "/events", headers: ["Cookie": "vapor-session=\(sessionKey.string)"]) { res async in
                 XCTAssertEqual(res.status, .ok)
                 let html = res.body.string
                 XCTAssertTrue(html.contains(#"action="/logout""#), "A signed-in visitor should see the Sign out form in the nav.")
@@ -510,7 +511,7 @@ final class AppTests: XCTestCase {
             }
 
             // And a request with no cookie at all still gets the signed-out nav.
-            try await app.test(.GET, "/events") { res in
+            try await app.test(.GET, "/events") { res async in
                 XCTAssertEqual(res.status, .ok)
                 let html = res.body.string
                 XCTAssertTrue(html.contains(">Sign in<"), "An anonymous visitor should see the Sign in link.")
@@ -565,14 +566,14 @@ final class AppTests: XCTestCase {
             }
 
             // The owner (host) sees the event and their own manage control.
-            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: owner)]) { res in
+            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: owner)]) { res async in
                 XCTAssertEqual(res.status, .ok)
                 XCTAssertTrue(res.body.string.contains("Cancel event"), "The host should see the manage/cancel control on their own event.")
             }
 
             // A plain group member sees the event but not manage controls
             // — they're a member, not the owner/moderator.
-            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: member)]) { res in
+            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: member)]) { res async in
                 XCTAssertEqual(res.status, .ok)
                 XCTAssertTrue(res.body.string.contains("Private Group Detail Event"), "A group member should be able to view their group's private event.")
                 XCTAssertFalse(res.body.string.contains("Cancel event"), "A plain member is not the host — no manage control.")
@@ -591,16 +592,258 @@ final class AppTests: XCTestCase {
             // back and update this assertion rather than silently pass.
             // What actually matters and IS correctly enforced either way:
             // the response never contains the event's title/venue/details.
-            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: outsider)]) { res in
+            try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: outsider)]) { res async in
                 XCTAssertEqual(res.status, .internalServerError, "A signed-in non-member must not see a private group event either (see note above on the status code itself).")
                 XCTAssertFalse(res.body.string.contains("Private Group Detail Event"), "A rejected outsider must never see the event's details, whatever the status code.")
             }
 
             // And a fully anonymous visitor, same rejection, same caveat.
-            try await app.test(.GET, path) { res in
+            try await app.test(.GET, path) { res async in
                 XCTAssertEqual(res.status, .internalServerError, "An anonymous visitor must not see a private group event either (see note above).")
                 XCTAssertFalse(res.body.string.contains("Private Group Detail Event"), "An anonymous visitor must never see the event's details, whatever the status code.")
             }
+        }
+    }
+    // MARK: - M5 verification
+
+    /// M5 acceptance criterion #2: a sent message persists to ChatMessage,
+    /// and the DTO conversion carries the sender's current displayName/
+    /// photoURL (not a snapshot frozen at send time — matches the
+    /// "Deleted user" handling called out in CreateChatMessage's
+    /// migration comment).
+    func testChatServiceSendPersistsMessageWithSenderDisplayInfo() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "chat-host@example.com")
+            let sender = try await makeUser(db: app.db, email: "chat-sender@example.com")
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(makeEventRequest(title: "Chat Test Event"), hostUserID: try host.requireID())
+
+            let chat = ChatService(db: app.db)
+            let message = try await chat.send(
+                SendChatMessageRequest(text: "hello from the test suite"),
+                eventID: try event.requireID(),
+                userID: try sender.requireID()
+            )
+
+            let dto = try message.toDTO()
+            XCTAssertEqual(dto.text, "hello from the test suite")
+            XCTAssertEqual(dto.userID, try sender.requireID())
+            XCTAssertEqual(dto.displayName, sender.displayName)
+            XCTAssertNil(dto.parentID)
+
+            let persisted = try await ChatMessage.query(on: app.db)
+                .filter(\.$event.$id == event.requireID())
+                .count()
+            XCTAssertEqual(persisted, 1, "The message must actually be in the database, not just returned.")
+        }
+    }
+
+    /// M5 acceptance criterion #3: replies store the correct parentID and
+    /// render nested — this pins down the "one level only" part of that
+    /// criterion, which is easy to silently violate later (a reply to a
+    /// reply should be rejected, not silently flattened or allowed to
+    /// nest arbitrarily deep).
+    func testChatServiceRejectsReplyToAReply() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "chat-thread-host@example.com")
+            let a = try await makeUser(db: app.db, email: "chat-thread-a@example.com")
+            let b = try await makeUser(db: app.db, email: "chat-thread-b@example.com")
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(makeEventRequest(title: "Threading Test Event"), hostUserID: try host.requireID())
+
+            let chat = ChatService(db: app.db)
+            let root = try await chat.send(SendChatMessageRequest(text: "root message"), eventID: try event.requireID(), userID: try a.requireID())
+            let reply = try await chat.send(
+                SendChatMessageRequest(text: "a reply", parentID: try root.requireID()),
+                eventID: try event.requireID(),
+                userID: try b.requireID()
+            )
+            XCTAssertEqual(reply.$parent.id, try root.requireID())
+
+            do {
+                _ = try await chat.send(
+                    SendChatMessageRequest(text: "a reply to a reply", parentID: try reply.requireID()),
+                    eventID: try event.requireID(),
+                    userID: try a.requireID()
+                )
+                XCTFail("A reply to a reply should be rejected — only one level of threading is supported.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "reply_too_deep")
+            }
+        }
+    }
+
+    /// M5 acceptance criteria #4/#5: chat access is exactly as restricted
+    /// as the event itself — an unauthenticated (nil requesterID) visitor
+    /// and a signed-in non-member of a private group event's hosting group
+    /// are both rejected, reusing the same assertVisible a stranger already
+    /// gets from EventWebController.detail()/EventService.join(). This is
+    /// the service-level authorization check; the actual WebSocket upgrade
+    /// rejection (shouldUpgrade throwing) needs a real browser/socket
+    /// client to verify end-to-end and is a human server-checkpoint item,
+    /// not something XCTVapor can drive directly (there's no WebSocket
+    /// test client wired into this suite).
+    func testChatServiceRejectsAccessToPrivateGroupEventForNonMembers() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "chat-access-owner@example.com", plan: .premium)
+            let member = try await makeUser(db: app.db, email: "chat-access-member@example.com")
+            let outsider = try await makeUser(db: app.db, email: "chat-access-outsider@example.com")
+
+            let group = Group(name: "Chat Access Group", slug: "chat-access-group-\(UUID())", description: "Members only", ownerID: try owner.requireID())
+            try await group.save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try owner.requireID(), role: .owner).save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try member.requireID(), role: .member).save(on: app.db)
+
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(
+                CreateEventRequest(
+                    title: "Private Chat Event",
+                    description: "Members only",
+                    category: .culture,
+                    date: Date().addingTimeInterval(3600),
+                    cityAddress: "Test City", cityLat: 0, cityLng: 0,
+                    venueAddress: "Secret Venue", venueLat: 0, venueLng: 0,
+                    hostGroupID: try group.requireID(),
+                    visibility: .private
+                ),
+                hostUserID: try owner.requireID()
+            )
+
+            let chat = ChatService(db: app.db)
+
+            // A member can access.
+            try await chat.assertCanAccessChat(event, requesterID: try member.requireID())
+
+            // A signed-in non-member cannot.
+            do {
+                try await chat.assertCanAccessChat(event, requesterID: try outsider.requireID())
+                XCTFail("A non-member must not be able to access a private group event's chat.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "not_found")
+            }
+
+            // Nor can a fully anonymous visitor.
+            do {
+                try await chat.assertCanAccessChat(event, requesterID: nil)
+                XCTFail("An anonymous visitor must not be able to access a private group event's chat.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "not_found")
+            }
+        }
+    }
+
+    /// M5 acceptance criteria #2/#6: history comes back oldest-first and
+    /// includes replies alongside root messages (the client is what
+    /// arranges them into a thread visually; the service just returns the
+    /// full ordered set) — this is what both a fresh page load and a
+    /// reconnect-after-drop use.
+    func testChatServiceHistoryReturnsMessagesOldestFirst() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "chat-history-host@example.com")
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(makeEventRequest(title: "History Test Event"), hostUserID: try host.requireID())
+
+            let chat = ChatService(db: app.db)
+            let first = try await chat.send(SendChatMessageRequest(text: "first"), eventID: try event.requireID(), userID: try host.requireID())
+            let second = try await chat.send(SendChatMessageRequest(text: "second"), eventID: try event.requireID(), userID: try host.requireID())
+
+            let history = try await chat.history(eventID: try event.requireID())
+            XCTAssertEqual(history.map(\.text), ["first", "second"])
+            XCTAssertEqual(try history.map { try $0.requireID() }, [try first.requireID(), try second.requireID()])
+        }
+    }
+
+    /// M5's own #for-loop template (pages/event-detail.leaf) and the
+    /// live-broadcast partial (partials/chat-message-oob.leaf) both
+    /// render this exact markup independently (see that partial's doc
+    /// comment on why it's duplicated rather than shared via #extend) —
+    /// this renders the *page* separately from the *live* partial and
+    /// checks both actually render without a Leaf error, since that's
+    /// exactly the kind of bug (a literal '#' misparsed as a tag) that
+    /// only surfaces at render time, per M4's testEventFragmentPartialRenders.
+    func testChatUIRendersWithAndWithoutHistory() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "chat-ui-host@example.com")
+            let sender = try await makeUser(db: app.db, email: "chat-ui-sender@example.com")
+            let service = EventService(db: app.db)
+            let event = try await service.createEvent(makeEventRequest(title: "Chat UI Test Event"), hostUserID: try host.requireID())
+
+            let chat = ChatService(db: app.db)
+            let root = try await chat.send(SendChatMessageRequest(text: "root message"), eventID: try event.requireID(), userID: try sender.requireID())
+            _ = try await chat.send(SendChatMessageRequest(text: "a reply", parentID: try root.requireID()), eventID: try event.requireID(), userID: try host.requireID())
+
+            let dto = try await service.fullDTO(for: event, requesterID: try host.requireID())
+            let chatMessages = try await chat.history(eventID: try event.requireID())
+            let chatHistory = try chatMessages.map { try $0.toDTO() }
+
+            let req = Request(application: app, on: app.eventLoopGroup.any())
+            let view = try await req.view.render("pages/event-detail", EventWebController.EventDetailPageContext(
+                title: dto.title,
+                event: dto,
+                isSignedIn: true,
+                canManage: true,
+                chatHistory: chatHistory
+            ))
+            let html = String(buffer: view.data)
+            XCTAssertTrue(html.contains(#"id="chat-messages""#), "Chat container missing from the page.")
+            XCTAssertTrue(html.contains("root message"), "Root message text missing.")
+            XCTAssertTrue(html.contains("a reply"), "Reply text missing.")
+            XCTAssertTrue(html.contains("ml-6 border-l-2"), "Reply should render with the nested-reply indent class.")
+            XCTAssertTrue(html.contains(#"ws-connect="/events/\#(try event.requireID())/chat/ws""#), "Chat socket connect URL missing or wrong.")
+
+            // And the empty-history case (no messages yet) must render
+            // cleanly too — an empty #for loop, not a template error.
+            let emptyView = try await req.view.render("pages/event-detail", EventWebController.EventDetailPageContext(
+                title: dto.title,
+                event: dto,
+                isSignedIn: false,
+                canManage: false,
+                chatHistory: []
+            ))
+            let emptyHTML = String(buffer: emptyView.data)
+            XCTAssertTrue(emptyHTML.contains(#"id="chat-messages""#), "Chat container missing from the empty-history page.")
+            XCTAssertTrue(emptyHTML.contains("Sign in</a> to join the chat"), "Signed-out visitor should see the sign-in prompt instead of a compose form.")
+        }
+    }
+
+    /// Independent review (pre-PR) found the test above only ever
+    /// rendered the page, never the standalone live-broadcast partial
+    /// ChatWebController actually sends over the socket — despite a doc
+    /// comment claiming both were covered. This closes that gap directly,
+    /// and also pins down the DOM-shape bug the same review caught: an
+    /// earlier version of chat-message-oob.leaf put hx-swap-oob on an
+    /// outer wrapper div rather than the .chat-message element itself,
+    /// which (per htmx's own oobSwap behavior — it clones whichever
+    /// element actually carries hx-swap-oob) would have inserted an extra
+    /// wrapper as a direct child of #chat-messages instead of the message
+    /// element landing there directly, unlike page-load-rendered messages.
+    func testChatMessageOOBPartialRendersWithSwapAttributeOnMessageElement() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "chat-oob-host@example.com")
+            let dto = ChatMessageDTO(
+                id: UUID(),
+                eventID: UUID(),
+                userID: try host.requireID(),
+                displayName: host.displayName,
+                photoURL: host.photoURL,
+                parentID: nil,
+                text: "a live message",
+                createdAt: Date()
+            )
+            struct Context: Encodable { let message: ChatMessageDTO }
+            let req = Request(application: app, on: app.eventLoopGroup.any())
+            let view = try await req.view.render("partials/chat-message-oob", Context(message: dto))
+            let html = String(buffer: view.data)
+
+            XCTAssertTrue(html.contains("a live message"), "Message text missing from the OOB partial.")
+            // The bug an independent review caught: hx-swap-oob must be on
+            // the SAME element as data-message-id, not a separate wrapper
+            // div — htmx clones whichever element actually carries
+            // hx-swap-oob, so a wrapper would land one DOM level too deep.
+            XCTAssertTrue(
+                html.contains(#"data-message-id="\#(dto.id)" hx-swap-oob="beforeend:#chat-messages""#),
+                "hx-swap-oob must be on the same element as data-message-id, not a wrapper div."
+            )
         }
     }
 }
