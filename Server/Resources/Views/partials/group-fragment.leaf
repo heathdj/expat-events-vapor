@@ -1,0 +1,71 @@
+<!--
+  The part of the group-detail page that changes on join/leave/promote
+  (mirrors partials/event-fragment.leaf's role for M4's join/leave/cancel
+  -- see that file's own doc comment for the pattern this follows).
+  Rendered two ways with the exact same flat context (group, isSignedIn,
+  isOwner, isMemberNotOwner, canJoin, isInviteOnlyAndNotMember, members):
+    - inline, via \#extend from pages/group-detail.leaf, sharing the
+      page's own full context (the same proven pattern event-detail.leaf/
+      event-fragment.leaf already use);
+    - standalone, by GroupWebController's join/leave/promote handlers
+      when the request came from htmx (HX-Request header) -- that
+      response replaces just this fragment, via
+      hx-target="\#group-fragment" hx-swap="outerHTML" below.
+  Keep this the single source of truth for this markup.
+
+  Every conditional here is a plain boolean (isOwner, canJoin,
+  row.isPromotable, ...), never a comparison against an enum's raw value
+  -- GroupWebController computes all of these in Swift precisely so this
+  template never needs to. See GroupFragmentContext's doc comment for why.
+-->
+<div id="group-fragment">
+    <div class="mt-4 flex items-center gap-3">
+        #if(isSignedIn):
+            #if(isOwner):
+            <span class="text-sm text-gray-500">You own this group.</span>
+            #endif
+            #if(isMemberNotOwner):
+            <form hx-post="/groups/#(group.id)/leave" hx-target="\#group-fragment" hx-swap="outerHTML"
+                  method="post" action="/groups/#(group.id)/leave">
+                <button type="submit" class="border border-gray-300 px-4 py-2 rounded-md text-sm hover:bg-gray-50">Leave group</button>
+            </form>
+            #endif
+            #if(canJoin):
+            <form hx-post="/groups/#(group.id)/join" hx-target="\#group-fragment" hx-swap="outerHTML"
+                  method="post" action="/groups/#(group.id)/join">
+                <button type="submit" class="bg-gray-900 text-white px-4 py-2 rounded-md text-sm hover:bg-gray-700">Join group</button>
+            </form>
+            #endif
+            #if(isInviteOnlyAndNotMember):
+            <span class="text-sm text-gray-500">This group is invite-only.</span>
+            #endif
+        #else:
+            <!-- A signed-out visitor always sees this, even on an
+                 invite-only group -- a minor, accepted UX trim (they'd
+                 only learn it's invite-only after signing in), the same
+                 kind of small simplification M5's "Sign in to join the
+                 chat" prompt already takes. -->
+            <a href="/login" class="bg-gray-900 text-white px-4 py-2 rounded-md text-sm hover:bg-gray-700">Sign in to join</a>
+        #endif
+    </div>
+
+    <div id="group-members" x-show="tab === 'members'" class="mt-4 divide-y divide-gray-100">
+        #for(row in members):
+        <div class="flex items-center justify-between py-2 text-sm">
+            <div>
+                <span class="font-medium">#(row.member.displayName)</span>
+                <span class="text-xs uppercase tracking-wide text-gray-400 ml-2">#(row.member.role)</span>
+            </div>
+            #if(row.isPromotable):
+            <form hx-post="/groups/#(group.id)/members/#(row.member.userID)/promote" hx-target="\#group-fragment" hx-swap="outerHTML"
+                  method="post" action="/groups/#(group.id)/members/#(row.member.userID)/promote">
+                <button type="submit" class="text-xs text-blue-600 hover:underline">Promote to moderator</button>
+            </form>
+            #endif
+        </div>
+        #endfor
+        #if(count(members) == 0):
+        <p class="text-sm text-gray-500 py-2">No members yet.</p>
+        #endif
+    </div>
+</div>
