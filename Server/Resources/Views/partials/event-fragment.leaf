@@ -21,6 +21,7 @@
         #if(isSignedIn):
             #if(event.isRequesterAttending):
             <form hx-post="/events/#(event.id)/leave" hx-target="\#event-fragment" hx-swap="outerHTML"
+                  hx-confirm="Leave this event?"
                   method="post" action="/events/#(event.id)/leave">
                 <button type="submit" class="border border-gray-300 px-4 py-2 rounded-md text-sm hover:bg-gray-50">Leave</button>
             </form>
@@ -35,9 +36,13 @@
         #endif
 
         #if(canManage):
+        <!-- hx-confirm alone, not also onsubmit's own confirm() -- both
+             together showed the dialog twice in a row (found in M4,
+             fixed when the destructive-action-confirms convention was
+             written down in M6 -- see architecture doc §15). -->
         <form hx-post="/events/#(event.id)/cancel" hx-target="\#event-fragment" hx-swap="outerHTML"
               hx-confirm="Cancel this event?"
-              method="post" action="/events/#(event.id)/cancel" onsubmit="return confirm('Cancel this event?');">
+              method="post" action="/events/#(event.id)/cancel">
             <button type="submit" class="text-sm text-red-600 hover:underline">Cancel event</button>
         </form>
         #endif

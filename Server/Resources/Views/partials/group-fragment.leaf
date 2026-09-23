@@ -27,6 +27,7 @@
             #endif
             #if(isMemberNotOwner):
             <form hx-post="/groups/#(group.id)/leave" hx-target="\#group-fragment" hx-swap="outerHTML"
+                  hx-confirm="Leave this group?"
                   method="post" action="/groups/#(group.id)/leave">
                 <button type="submit" class="border border-gray-300 px-4 py-2 rounded-md text-sm hover:bg-gray-50">Leave group</button>
             </form>
@@ -65,6 +66,7 @@
             #endif
             #if(row.isDemotable):
             <form hx-post="/groups/#(group.id)/members/#(row.member.userID)/demote" hx-target="\#group-fragment" hx-swap="outerHTML"
+                  hx-confirm="Remove #(row.member.displayName) as moderator?"
                   method="post" action="/groups/#(group.id)/members/#(row.member.userID)/demote">
                 <button type="submit" class="text-xs text-red-600 hover:underline">Remove as moderator</button>
             </form>

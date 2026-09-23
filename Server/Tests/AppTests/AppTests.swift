@@ -1450,4 +1450,91 @@ final class AppTests: XCTestCase {
             XCTAssertTrue(betaHTML.contains("Sign in to join"), "An anonymous visitor should see the sign-in prompt, not a join button.")
         }
     }
+
+    /// Requested after the M6 human checkpoint: every destructive action
+    /// (cancel an event, leave an event/group, remove a moderator) must
+    /// confirm before firing -- see architecture doc §15's convention,
+    /// written down as part of this fix. Also guards against ever
+    /// reintroducing the M4 double-confirm-dialog bug this same pass
+    /// fixed (hx-confirm plus a matching onsubmit="return confirm(...)"
+    /// on the same form showed the browser's dialog twice in a row).
+    func testDestructiveActionButtonsHaveConfirmDialogsNotDoubleDialogs() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "confirm-event-host@example.com")
+            let attendee = try await makeUser(db: app.db, email: "confirm-event-attendee@example.com")
+            let eventService = EventService(db: app.db)
+            let event = try await eventService.createEvent(makeEventRequest(title: "Confirm Dialog Test Event"), hostUserID: try host.requireID())
+            _ = try await eventService.join(event, userID: try attendee.requireID())
+            let attendeeDTO = try await eventService.fullDTO(for: event, requesterID: try attendee.requireID())
+            let hostDTO = try await eventService.fullDTO(for: event, requesterID: try host.requireID())
+
+            let req = Request(application: app, on: app.eventLoopGroup.any())
+
+            let leaveView = try await req.view.render("partials/event-fragment", EventWebController.EventFragmentContext(
+                event: attendeeDTO,
+                isSignedIn: true,
+                canManage: false
+            ))
+            let leaveHTML = String(buffer: leaveView.data)
+            XCTAssertTrue(leaveHTML.contains(#"hx-confirm="Leave this event?""#), "Leaving an event should confirm.")
+
+            let cancelView = try await req.view.render("partials/event-fragment", EventWebController.EventFragmentContext(
+                event: hostDTO,
+                isSignedIn: true,
+                canManage: true
+            ))
+            let cancelHTML = String(buffer: cancelView.data)
+            XCTAssertTrue(cancelHTML.contains(#"hx-confirm="Cancel this event?""#), "Cancelling an event should confirm.")
+            XCTAssertFalse(cancelHTML.contains("onsubmit"), "hx-confirm alone, not also onsubmit's own confirm() -- together they show the dialog twice.")
+
+            let groupOwner = try await makeUser(db: app.db, email: "confirm-group-owner@example.com", plan: .premium)
+            let groupMember = try await makeUser(db: app.db, email: "confirm-group-member@example.com", displayName: "Moderator To Remove")
+            let groupService = GroupService(db: app.db)
+            let group = try await groupService.createGroup(
+                CreateGroupRequest(name: "Confirm Dialog Test Group", description: "Test"),
+                ownerID: try groupOwner.requireID()
+            )
+            let groupID = try group.requireID()
+            try await GroupMembership(groupID: groupID, userID: try groupMember.requireID(), role: .moderator).save(on: app.db)
+
+            guard let reloadedGroup = try await groupService.find(groupID) else {
+                XCTFail("Group must exist immediately after creation.")
+                return
+            }
+            let groupDTO = try await groupService.toDTO(reloadedGroup, requesterID: try groupOwner.requireID())
+            let members = try await groupService.members(of: reloadedGroup)
+            let memberRows = members.map {
+                GroupWebController.MemberRowContext(member: $0, isPromotable: false, isDemotable: $0.role == .moderator)
+            }
+
+            let groupView = try await req.view.render("partials/group-fragment", GroupWebController.GroupFragmentContext(
+                group: groupDTO,
+                isSignedIn: true,
+                isOwner: true,
+                isMemberNotOwner: false,
+                canJoin: false,
+                isInviteOnlyAndNotMember: false,
+                members: memberRows
+            ))
+            let groupHTML = String(buffer: groupView.data)
+            XCTAssertTrue(groupHTML.contains(#"hx-confirm="Remove Moderator To Remove as moderator?""#), "Removing a moderator should confirm, naming who.")
+            XCTAssertFalse(groupHTML.contains("onsubmit"), "No onsubmit double-dialog on the group fragment either.")
+
+            let memberDTO = try await groupService.toDTO(reloadedGroup, requesterID: try groupMember.requireID())
+            let memberFlagsRows = members.map {
+                GroupWebController.MemberRowContext(member: $0, isPromotable: false, isDemotable: false)
+            }
+            let leaveGroupView = try await req.view.render("partials/group-fragment", GroupWebController.GroupFragmentContext(
+                group: memberDTO,
+                isSignedIn: true,
+                isOwner: false,
+                isMemberNotOwner: true,
+                canJoin: false,
+                isInviteOnlyAndNotMember: false,
+                members: memberFlagsRows
+            ))
+            let leaveGroupHTML = String(buffer: leaveGroupView.data)
+            XCTAssertTrue(leaveGroupHTML.contains(#"hx-confirm="Leave this group?""#), "Leaving a group should confirm.")
+        }
+    }
 }
