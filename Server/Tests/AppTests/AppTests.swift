@@ -65,6 +65,53 @@ final class AppTests: XCTestCase {
         }
     }
 
+    /// Independent review (pre-PR) caught: findOrCreateGroup matched by
+    /// slug only and never revisited ownerID on an existing row, so
+    /// re-running seed against a DB seeded under a since-changed owner
+    /// email (alice@example.com -> heathdj@gmail.com) would leave the
+    /// group FK-owned by the stale row while the new row got a second,
+    /// orphaned owner-role membership -- promoteModerator (FK-based) and
+    /// PlanLimitsService (membership-row-based) would then disagree about
+    /// who owns the group. This simulates exactly that pre-existing-DB
+    /// scenario directly (rather than depending on today's seed data
+    /// still containing a stale email tomorrow) and confirms
+    /// findOrCreateGroup reconciles it: ownership FK moves to the new
+    /// owner and the old owner's membership is demoted to .member, not
+    /// left as a second .owner row.
+    func testSeedCommandReconcilesGroupOwnershipWhenSeededOwnerEmailChanges() async throws {
+        try await withApp { app in
+            let staleOwner = try await makeUser(db: app.db, email: "stale-seed-owner@example.com", plan: .premium, displayName: "Stale Owner")
+            let staleGroup = Group(name: "Digital Nomads Berlin", slug: "digital-nomads-berlin", description: "stale", ownerID: try staleOwner.requireID())
+            try await staleGroup.save(on: app.db)
+            try await GroupMembership(groupID: try staleGroup.requireID(), userID: try staleOwner.requireID(), role: .owner).save(on: app.db)
+
+            let command = SeedCommand()
+            var context = CommandContext(console: app.console, input: CommandInput(arguments: ["seed"]))
+            context.application = app
+            try command.run(using: context, signature: SeedCommand.Signature())
+
+            guard let reconciledGroup = try await Group.query(on: app.db).filter(\.$slug == "digital-nomads-berlin").with(\.$owner).first() else {
+                XCTFail("The seeded group must still exist after reconciliation.")
+                return
+            }
+            XCTAssertEqual(reconciledGroup.owner.email, "heathdj@gmail.com", "Ownership FK should move to the seed's current intended owner.")
+
+            let reconciledGroupID = try reconciledGroup.requireID()
+            let staleOwnerID = try staleOwner.requireID()
+            let staleMembership = try await GroupMembership.query(on: app.db)
+                .filter(\.$group.$id == reconciledGroupID)
+                .filter(\.$user.$id == staleOwnerID)
+                .first()
+            XCTAssertEqual(staleMembership?.role, .member, "The old owner should be demoted to a plain member, not left as a second owner.")
+
+            let ownerRoleCount = try await GroupMembership.query(on: app.db)
+                .filter(\.$group.$id == reconciledGroupID)
+                .filter(\.$role == .owner)
+                .count()
+            XCTAssertEqual(ownerRoleCount, 1, "Exactly one membership row should have the owner role after reconciliation.")
+        }
+    }
+
     /// Known-risk area #1 in the plan: plan-limit boundaries are the likely
     /// bug class (4 vs. 5 vs. 6) — test the exact boundary for event hosting.
     func testFreeUserCanHostExactlyFiveActiveEvents() async throws {
@@ -1130,6 +1177,51 @@ final class AppTests: XCTestCase {
             let joined = try await eventService.join(event, userID: try member.requireID())
             let dto = try await eventService.fullDTO(for: joined, requesterID: try member.requireID())
             XCTAssertTrue(dto.isRequesterAttending)
+        }
+    }
+
+    /// Independent review (pre-PR) caught that GroupService.upcomingEvents
+    /// never called EventService.assertVisible, so a .private group-hosted
+    /// event rendered straight into the group detail page's Upcoming
+    /// Events tab for a non-member or anonymous visitor -- criterion #5's
+    /// "invisible via listing, direct URL, and API" requirement has a
+    /// fourth leg this milestone's own new UI adds (the tab itself), and
+    /// this pins it down directly at the service level.
+    func testUpcomingEventsExcludesPrivateGroupEventForNonMemberButIncludesForMember() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-upcoming-owner@example.com", plan: .premium)
+            let member = try await makeUser(db: app.db, email: "group-upcoming-member@example.com")
+            let outsider = try await makeUser(db: app.db, email: "group-upcoming-outsider@example.com")
+            let group = Group(name: "Upcoming Events Visibility Group", slug: "upcoming-events-visibility-group-\(UUID())", description: "Test", ownerID: try owner.requireID())
+            try await group.save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try owner.requireID(), role: .owner).save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try member.requireID(), role: .member).save(on: app.db)
+
+            let eventService = EventService(db: app.db)
+            _ = try await eventService.createEvent(
+                CreateEventRequest(
+                    title: "Private Tab-Leak Check",
+                    description: "Sensitive",
+                    category: .culture,
+                    date: Date().addingTimeInterval(3600),
+                    cityAddress: "Test City", cityLat: 0, cityLng: 0,
+                    venueAddress: "Secret Venue", venueLat: 0, venueLng: 0,
+                    hostGroupID: try group.requireID(),
+                    visibility: .private
+                ),
+                hostUserID: try owner.requireID()
+            )
+
+            let groupService = GroupService(db: app.db)
+
+            let forMember = try await groupService.upcomingEvents(of: group, requesterID: try member.requireID())
+            XCTAssertTrue(forMember.contains { $0.title == "Private Tab-Leak Check" }, "A member of the hosting group must see the private event in the Upcoming Events tab.")
+
+            let forOutsider = try await groupService.upcomingEvents(of: group, requesterID: try outsider.requireID())
+            XCTAssertFalse(forOutsider.contains { $0.title == "Private Tab-Leak Check" }, "A non-member must not see the private event in the Upcoming Events tab.")
+
+            let forAnonymous = try await groupService.upcomingEvents(of: group, requesterID: nil)
+            XCTAssertFalse(forAnonymous.contains { $0.title == "Private Tab-Leak Check" }, "An anonymous visitor must not see the private event in the Upcoming Events tab.")
         }
     }
 

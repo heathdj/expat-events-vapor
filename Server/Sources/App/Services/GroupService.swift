@@ -190,6 +190,16 @@ struct GroupService {
     /// first. Reuses `EventService.summaryDTO` rather than a second DTO
     /// mapper — the shape needed here (title/category/date/city/host/
     /// attendee count) is exactly `EventSummaryDTO`.
+    ///
+    /// Visibility-filtered the same way `EventService.filteredEvents`
+    /// filters its own listing (excluded entirely for a non-member,
+    /// rather than shown-then-blocked) — an independent review caught
+    /// that this didn't originally call `assertVisible` at all, which
+    /// meant a `.private` group-hosted event rendered straight into this
+    /// tab for anyone who could reach `/groups/:slug`, group membership
+    /// or not. That's the exact leak M6 acceptance criterion #5 already
+    /// tests for via the listing/direct-URL/API legs — this is the tab's
+    /// own leg of the same requirement.
     func upcomingEvents(of group: Group, requesterID: UUID?) async throws -> [EventSummaryDTO] {
         let groupID = try group.requireID()
         let events = try await Event.query(on: db)
@@ -201,6 +211,7 @@ struct GroupService {
         let eventService = EventService(db: db)
         var summaries: [EventSummaryDTO] = []
         for event in events {
+            guard (try? await eventService.assertVisible(event, to: requesterID)) != nil else { continue }
             summaries.append(try await eventService.summaryDTO(for: event, requesterID: requesterID))
         }
         return summaries
