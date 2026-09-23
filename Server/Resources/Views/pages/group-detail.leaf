@@ -1,0 +1,43 @@
+#extend("layouts/base"):
+#export("body"):
+<!--
+  M6 acceptance criterion #7: three tabs (Upcoming Events / About /
+  Members) with distinct content, switched client-side via Alpine's
+  x-data/x-show (no server round trip needed -- all three tabs' data is
+  already in this one render). The Members tab's actual content lives
+  inside \#extend("partials/group-fragment") below, not here directly,
+  since join/leave/promote need to re-render it standalone over htmx;
+  see that partial's own doc comment.
+-->
+<div class="bg-white border border-gray-200 rounded-lg p-6" x-data="{ tab: 'events' }">
+    <div>
+        <h1 class="text-2xl font-semibold">#(group.name)</h1>
+        <p class="text-sm text-gray-500 mt-1">#(group.memberCount) members — owned by #(group.ownerDisplayName)</p>
+    </div>
+
+    <div class="mt-6 border-b border-gray-200 flex gap-4 text-sm">
+        <button type="button" @click="tab = 'events'" :class="tab === 'events' ? 'border-b-2 border-gray-900 font-medium pb-2' : 'text-gray-500 pb-2'">Upcoming Events</button>
+        <button type="button" @click="tab = 'about'" :class="tab === 'about' ? 'border-b-2 border-gray-900 font-medium pb-2' : 'text-gray-500 pb-2'">About</button>
+        <button type="button" @click="tab = 'members'" :class="tab === 'members' ? 'border-b-2 border-gray-900 font-medium pb-2' : 'text-gray-500 pb-2'">Members</button>
+    </div>
+
+    #extend("partials/group-fragment")
+
+    <div x-show="tab === 'events'" class="mt-4 space-y-3">
+        #for(event in upcomingEvents):
+        <a href="/events/#(event.id)" class="block border border-gray-200 rounded-md p-3 hover:border-gray-400">
+            <h3 class="font-medium text-sm">#(event.title)</h3>
+            <p class="text-xs text-gray-500 mt-1">#(event.cityAddress) — #(event.attendeeCount) attending</p>
+        </a>
+        #endfor
+        #if(count(upcomingEvents) == 0):
+        <p class="text-sm text-gray-500">No upcoming events yet.</p>
+        #endif
+    </div>
+
+    <div x-show="tab === 'about'" class="mt-4 text-sm text-gray-700">
+        <p>#(group.description)</p>
+    </div>
+</div>
+#endexport
+#endextend

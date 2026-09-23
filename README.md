@@ -60,7 +60,7 @@ expatevents-mvp/
    ```sh
    swift build
    swift run App migrate --yes   # creates every table from Migrations/
-   swift run App seed            # 3 users, 1 group, 2 events — see Commands/SeedCommand.swift
+   swift run App seed            # 4 users, 2 groups, 3 events — see Commands/SeedCommand.swift
    swift run App serve           # starts the server on http://localhost:8080
    ```
 4. Check it's alive:
@@ -68,7 +68,7 @@ expatevents-mvp/
    curl http://localhost:8080/health
    # {"status":"ok","database":"connected"}
    ```
-5. Visit `http://localhost:8080/events` in a browser for the (currently unstyled-beyond-Tailwind-CDN) events dashboard, or `http://localhost:8080/login` for sign-in — sign-in won't actually complete without real `APPLE_CLIENT_ID`/`GOOGLE_CLIENT_ID` values and matching Apple/Google app configuration (see the architecture doc §2 prerequisites and the MVP plan's own §2).
+5. Visit `http://localhost:8080/events` in a browser for the (currently unstyled-beyond-Tailwind-CDN) events dashboard, `http://localhost:8080/groups` for the group directory, or `http://localhost:8080/login` for sign-in — sign-in won't actually complete without real `APPLE_CLIENT_ID`/`GOOGLE_CLIENT_ID` values and matching Apple/Google app configuration (see the architecture doc §2 prerequisites and the MVP plan's own §2).
 
 ## Running tests
 

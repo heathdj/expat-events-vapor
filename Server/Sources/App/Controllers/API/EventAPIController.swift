@@ -8,8 +8,30 @@ import ExpatEventsAPI
 struct EventAPIController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let events = routes.grouped("api", "v1", "events")
-        events.get(use: list)
-        events.get(":eventID", use: detail)
+
+        // Found while writing M6's tests for its own acceptance criterion
+        // #5 ("check the listing, the direct URL, AND the JSON API"): these
+        // two GET routes previously had no authenticator on them at all --
+        // not even an optional one -- so `req.auth.get(User.self)` was
+        // *always* nil here regardless of whether a caller sent a valid
+        // Bearer token, the same class of bug M2's real click-through
+        // checkpoint found on the web side (a route sitting outside the
+        // authenticator entirely, not just outside a guard). The practical
+        // effect was never a security leak (the wrong direction is "an
+        // actual member gets treated as anonymous and denied," not "a
+        // stranger gets treated as a member"), but it did mean a private
+        // group event's own member could never see it via this API path
+        // even with a valid token -- exactly the case criterion #5 asks to
+        // be checked. `UserBearerAuthenticator` alone (no `.guardMiddleware()`)
+        // is the same "optionally authenticated" shape
+        // `EventWebController`'s own `optionallyAuthenticated` group uses
+        // for its GET routes: it only acts when an `Authorization: Bearer`
+        // header is actually present, and never throws on its own even on
+        // a bad token (see its own doc comment) -- so applying it here
+        // costs anonymous callers nothing.
+        let optionallyAuthenticated = events.grouped(UserBearerAuthenticator())
+        optionallyAuthenticated.get(use: list)
+        optionallyAuthenticated.get(":eventID", use: detail)
 
         let authenticated = events.grouped(UserBearerAuthenticator(), User.guardMiddleware(), NotSuspendedMiddleware())
         authenticated.post(use: create)

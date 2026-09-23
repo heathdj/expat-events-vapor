@@ -21,6 +21,7 @@
         <a href="/" class="font-semibold text-lg">ExpatEvents</a>
         <div class="flex items-center gap-4 text-sm">
             <a href="/events" class="hover:underline">Events</a>
+            <a href="/groups" class="hover:underline">Groups</a>
             #if(isSignedIn):
             <form method="post" action="/logout" class="inline">
                 <button type="submit" class="hover:underline">Sign out</button>

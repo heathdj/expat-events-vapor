@@ -57,8 +57,58 @@ final class AppTests: XCTestCase {
             let eventCount = try await Event.query(on: app.db).count()
             XCTAssertGreaterThanOrEqual(eventCount, 2)
 
+            // M6's seed command now creates 2 groups (Digital Nomads Berlin,
+            // Foodies Lisbon) -- was 1 before M6; this assertion just
+            // hadn't been updated to match the new seed shape yet.
             let groupCount = try await Group.query(on: app.db).count()
-            XCTAssertEqual(groupCount, 1)
+            XCTAssertEqual(groupCount, 2)
+        }
+    }
+
+    /// Independent review (pre-PR) caught: findOrCreateGroup matched by
+    /// slug only and never revisited ownerID on an existing row, so
+    /// re-running seed against a DB seeded under a since-changed owner
+    /// email (alice@example.com -> heathdj@gmail.com) would leave the
+    /// group FK-owned by the stale row while the new row got a second,
+    /// orphaned owner-role membership -- promoteModerator (FK-based) and
+    /// PlanLimitsService (membership-row-based) would then disagree about
+    /// who owns the group. This simulates exactly that pre-existing-DB
+    /// scenario directly (rather than depending on today's seed data
+    /// still containing a stale email tomorrow) and confirms
+    /// findOrCreateGroup reconciles it: ownership FK moves to the new
+    /// owner and the old owner's membership is demoted to .member, not
+    /// left as a second .owner row.
+    func testSeedCommandReconcilesGroupOwnershipWhenSeededOwnerEmailChanges() async throws {
+        try await withApp { app in
+            let staleOwner = try await makeUser(db: app.db, email: "stale-seed-owner@example.com", plan: .premium, displayName: "Stale Owner")
+            let staleGroup = Group(name: "Digital Nomads Berlin", slug: "digital-nomads-berlin", description: "stale", ownerID: try staleOwner.requireID())
+            try await staleGroup.save(on: app.db)
+            try await GroupMembership(groupID: try staleGroup.requireID(), userID: try staleOwner.requireID(), role: .owner).save(on: app.db)
+
+            let command = SeedCommand()
+            var context = CommandContext(console: app.console, input: CommandInput(arguments: ["seed"]))
+            context.application = app
+            try command.run(using: context, signature: SeedCommand.Signature())
+
+            guard let reconciledGroup = try await Group.query(on: app.db).filter(\.$slug == "digital-nomads-berlin").with(\.$owner).first() else {
+                XCTFail("The seeded group must still exist after reconciliation.")
+                return
+            }
+            XCTAssertEqual(reconciledGroup.owner.email, "heathdj@gmail.com", "Ownership FK should move to the seed's current intended owner.")
+
+            let reconciledGroupID = try reconciledGroup.requireID()
+            let staleOwnerID = try staleOwner.requireID()
+            let staleMembership = try await GroupMembership.query(on: app.db)
+                .filter(\.$group.$id == reconciledGroupID)
+                .filter(\.$user.$id == staleOwnerID)
+                .first()
+            XCTAssertEqual(staleMembership?.role, .member, "The old owner should be demoted to a plain member, not left as a second owner.")
+
+            let ownerRoleCount = try await GroupMembership.query(on: app.db)
+                .filter(\.$group.$id == reconciledGroupID)
+                .filter(\.$role == .owner)
+                .count()
+            XCTAssertEqual(ownerRoleCount, 1, "Exactly one membership row should have the owner role after reconciliation.")
         }
     }
 
@@ -105,9 +155,9 @@ final class AppTests: XCTestCase {
 
     // MARK: - M4 test helpers
 
-    private func makeUser(db: Database, email: String, plan: PlanTier = .free) async throws -> User {
+    private func makeUser(db: Database, email: String, plan: PlanTier = .free, displayName: String? = nil) async throws -> User {
         let user = User(
-            displayName: email,
+            displayName: displayName ?? email,
             email: email,
             privacyPolicyVersion: LegalVersions.privacyPolicy,
             termsVersion: LegalVersions.terms
@@ -844,6 +894,647 @@ final class AppTests: XCTestCase {
                 html.contains(#"data-message-id="\#(dto.id)" hx-swap-oob="beforeend:#chat-messages""#),
                 "hx-swap-oob must be on the same element as data-message-id, not a wrapper div."
             )
+        }
+    }
+
+    // MARK: - M6 verification
+
+    /// Shared by the M6 tests below that need a real signed-in HTTP round
+    /// trip (mirrors the private local helper
+    /// testSignedInSessionRestoresGroupEventVisibilityAndManageControls
+    /// already defined inline -- extracted here since several new tests
+    /// need it, not just one).
+    private func sessionCookie(for user: User, db: Database) async throws -> String {
+        var data = SessionData()
+        data["_UserSession"] = try user.requireID().uuidString
+        let key = SessionID(string: UUID().uuidString)
+        try await SessionRecord(key: key, data: data).create(on: db)
+        return "vapor-session=\(key.string)"
+    }
+
+    /// M6 acceptance criterion #1: a Free user's attempt to create a group
+    /// gets a clear upgrade message rendered back into the form, not a
+    /// raw error page -- unlike EventWebController.create's equivalent
+    /// catch block for the analogous private-event case, which currently
+    /// re-renders its form with no message at all (see GroupWebController
+    /// .create's own doc comment; that's a separately tracked, pre-existing
+    /// gap, not something this test is about).
+    func testFreeUserCreatingGroupSeesUpgradePromptNotRawError() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "group-free@example.com", plan: .free)
+            let cookie = try await sessionCookie(for: user, db: app.db)
+
+            try await app.test(.POST, "/groups", headers: [
+                "Cookie": cookie,
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: "name=My+Group&description=Test&visibility=public")) { res async in
+                XCTAssertEqual(res.status, .badRequest, "A plan-limit rejection should be a clean 400, not a 500.")
+                let html = res.body.string
+                XCTAssertTrue(html.contains("Premium"), "The rejection message should clearly explain the Premium requirement, not just fail silently.")
+                XCTAssertFalse(html.contains("Fatal error") || html.contains("Internal Server Error"), "Must not fall through to a raw error page.")
+            }
+
+            let count = try await Group.query(on: app.db).filter(\.$name == "My Group").count()
+            XCTAssertEqual(count, 0, "The rejected group must not have been created.")
+        }
+    }
+
+    /// M6 acceptance criterion #2: a Premium user can create exactly one
+    /// group; a second attempt while still owning the first is rejected.
+    func testPremiumUserCanCreateExactlyOneGroup() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-owner-limit@example.com", plan: .premium)
+            let service = GroupService(db: app.db)
+
+            let first = try await service.createGroup(
+                CreateGroupRequest(name: "First Group", description: "The one allowed group"),
+                ownerID: try owner.requireID()
+            )
+            XCTAssertEqual(first.slug, "first-group")
+
+            do {
+                _ = try await service.createGroup(
+                    CreateGroupRequest(name: "Second Group", description: "Should be rejected"),
+                    ownerID: try owner.requireID()
+                )
+                XCTFail("A second group while still owning the first should be rejected.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "plan_limit_exceeded")
+            }
+
+            let ownerID = try owner.requireID()
+            let ownedCount = try await GroupMembership.query(on: app.db)
+                .filter(\.$user.$id == ownerID)
+                .filter(\.$role == .owner)
+                .count()
+            XCTAssertEqual(ownedCount, 1, "Still only one owned group after the rejected attempt.")
+        }
+    }
+
+    /// M6 acceptance criterion #3: an owner can promote up to 5
+    /// moderators; the 6th attempt is rejected. Also confirms promoting
+    /// an already-owner/moderator member is a harmless no-op rather than
+    /// an error, and counts against nothing.
+    func testOwnerCanPromoteUpToFiveModeratorsSixthRejected() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-promote-owner@example.com", plan: .premium)
+            let service = GroupService(db: app.db)
+            let group = try await service.createGroup(
+                CreateGroupRequest(name: "Promotion Test Group", description: "Testing the moderator cap"),
+                ownerID: try owner.requireID()
+            )
+
+            var members: [User] = []
+            for i in 0..<6 {
+                let member = try await makeUser(db: app.db, email: "group-promote-member-\(i)@example.com")
+                try await GroupMembership(groupID: try group.requireID(), userID: try member.requireID(), role: .member).save(on: app.db)
+                members.append(member)
+            }
+
+            // Promoting an already-owner member is a no-op, not an error,
+            // and doesn't count against the cap.
+            try await service.promoteModerator(group, memberUserID: try owner.requireID(), requesterID: try owner.requireID())
+
+            for member in members.prefix(5) {
+                try await service.promoteModerator(group, memberUserID: try member.requireID(), requesterID: try owner.requireID())
+            }
+
+            let groupID = try group.requireID()
+            let moderatorCount = try await GroupMembership.query(on: app.db)
+                .filter(\.$group.$id == groupID)
+                .filter(\.$role == .moderator)
+                .count()
+            XCTAssertEqual(moderatorCount, 5, "Exactly 5 members should now be moderators.")
+
+            do {
+                try await service.promoteModerator(group, memberUserID: try members[5].requireID(), requesterID: try owner.requireID())
+                XCTFail("A 6th moderator promotion should be rejected.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "moderator_limit_reached")
+            }
+
+            // Re-promoting an already-moderator member is still a no-op,
+            // even once the cap is reached (it doesn't try to add a 6th).
+            try await service.promoteModerator(group, memberUserID: try members[0].requireID(), requesterID: try owner.requireID())
+            let stillFive = try await GroupMembership.query(on: app.db)
+                .filter(\.$group.$id == groupID)
+                .filter(\.$role == .moderator)
+                .count()
+            XCTAssertEqual(stillFive, 5)
+        }
+    }
+
+    /// Only the owner may promote -- a moderator attempting to promote a
+    /// plain member is rejected the same as a stranger would be.
+    func testOnlyOwnerCanPromoteNotAModerator() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-promote-only-owner@example.com", plan: .premium)
+            let moderator = try await makeUser(db: app.db, email: "group-promote-only-mod@example.com")
+            let member = try await makeUser(db: app.db, email: "group-promote-only-member@example.com")
+            let service = GroupService(db: app.db)
+            let group = try await service.createGroup(
+                CreateGroupRequest(name: "Owner Only Promotes", description: "Test"),
+                ownerID: try owner.requireID()
+            )
+            try await GroupMembership(groupID: try group.requireID(), userID: try moderator.requireID(), role: .moderator).save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try member.requireID(), role: .member).save(on: app.db)
+
+            do {
+                try await service.promoteModerator(group, memberUserID: try member.requireID(), requesterID: try moderator.requireID())
+                XCTFail("A moderator (not the owner) should not be able to promote another member.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "forbidden")
+            }
+        }
+    }
+
+    /// Added after the M6 human checkpoint (owner/admin moderator removal
+    /// confirmed as needed for the MVP): the owner can revoke a
+    /// moderator's role back to a plain member. Mirrors
+    /// testOwnerCanPromoteUpToFiveModeratorsSixthRejected's structure for
+    /// the demote side.
+    func testOwnerCanDemoteModeratorBackToMember() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-demote-owner@example.com", plan: .premium)
+            let moderator = try await makeUser(db: app.db, email: "group-demote-mod@example.com")
+            let service = GroupService(db: app.db)
+            let group = try await service.createGroup(
+                CreateGroupRequest(name: "Demote Test Group", description: "Test"),
+                ownerID: try owner.requireID()
+            )
+            let groupID = try group.requireID()
+            let moderatorID = try moderator.requireID()
+            try await GroupMembership(groupID: groupID, userID: moderatorID, role: .moderator).save(on: app.db)
+
+            try await service.demoteModerator(group, memberUserID: moderatorID, requesterID: try owner.requireID())
+
+            let membership = try await GroupMembership.query(on: app.db)
+                .filter(\.$group.$id == groupID)
+                .filter(\.$user.$id == moderatorID)
+                .first()
+            XCTAssertEqual(membership?.role, .member, "Demoting a moderator should revoke the role, not remove them from the group.")
+
+            // Demoting someone who isn't currently a moderator (already a
+            // plain member here) is a harmless no-op, mirroring
+            // promoteModerator's own idempotent style.
+            try await service.demoteModerator(group, memberUserID: moderatorID, requesterID: try owner.requireID())
+            let stillMember = try await GroupMembership.query(on: app.db)
+                .filter(\.$group.$id == groupID)
+                .filter(\.$user.$id == moderatorID)
+                .first()
+            XCTAssertEqual(stillMember?.role, .member)
+        }
+    }
+
+    /// Only the owner may demote -- a moderator (or anyone else) attempting
+    /// to demote another moderator is rejected the same as promote is.
+    func testOnlyOwnerCanDemoteNotAModerator() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-demote-only-owner@example.com", plan: .premium)
+            let moderatorA = try await makeUser(db: app.db, email: "group-demote-only-mod-a@example.com")
+            let moderatorB = try await makeUser(db: app.db, email: "group-demote-only-mod-b@example.com")
+            let service = GroupService(db: app.db)
+            let group = try await service.createGroup(
+                CreateGroupRequest(name: "Owner Only Demotes", description: "Test"),
+                ownerID: try owner.requireID()
+            )
+            let groupID = try group.requireID()
+            try await GroupMembership(groupID: groupID, userID: try moderatorA.requireID(), role: .moderator).save(on: app.db)
+            try await GroupMembership(groupID: groupID, userID: try moderatorB.requireID(), role: .moderator).save(on: app.db)
+
+            do {
+                try await service.demoteModerator(group, memberUserID: try moderatorB.requireID(), requesterID: try moderatorA.requireID())
+                XCTFail("A moderator (not the owner) should not be able to demote another moderator.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "forbidden")
+            }
+        }
+    }
+
+    /// M6 acceptance criterion #4: a moderator (not the owner) can create
+    /// a group-hosted event; a plain member cannot. The underlying check
+    /// (EventService.createEvent's hostGroupID path) already existed
+    /// before this milestone, but nothing exercised it until now.
+    func testModeratorCanCreateGroupEventPlainMemberCannot() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-event-owner@example.com", plan: .premium)
+            let moderator = try await makeUser(db: app.db, email: "group-event-mod@example.com")
+            let member = try await makeUser(db: app.db, email: "group-event-member@example.com")
+            let groupService = GroupService(db: app.db)
+            let group = try await groupService.createGroup(
+                CreateGroupRequest(name: "Event Hosting Group", description: "Test"),
+                ownerID: try owner.requireID()
+            )
+            try await GroupMembership(groupID: try group.requireID(), userID: try moderator.requireID(), role: .moderator).save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try member.requireID(), role: .member).save(on: app.db)
+
+            let eventService = EventService(db: app.db)
+            let request = CreateEventRequest(
+                title: "Moderator-Hosted Meetup",
+                description: "Test",
+                category: .culture,
+                date: Date().addingTimeInterval(3600),
+                cityAddress: "Test City", cityLat: 0, cityLng: 0,
+                venueAddress: "Test Venue", venueLat: 0, venueLng: 0,
+                hostGroupID: try group.requireID()
+            )
+            let event = try await eventService.createEvent(request, hostUserID: try moderator.requireID())
+            XCTAssertEqual(event.$hostGroup.id, try group.requireID())
+
+            do {
+                _ = try await eventService.createEvent(request, hostUserID: try member.requireID())
+                XCTFail("A plain member should not be able to create an event under the group.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "forbidden")
+            }
+        }
+    }
+
+    /// M6 acceptance criterion #5: checks all three surfaces the plan
+    /// calls out. The listing/direct-URL halves were already covered by
+    /// EventService-level tests before this milestone
+    /// (testSignedInSessionRestoresGroupEventVisibilityAndManageControls,
+    /// testChatServiceRejectsAccessToPrivateGroupEventForNonMembers); this
+    /// is the first test in the whole suite that exercises the actual
+    /// `/api/v1/events/:id` HTTP route. Writing it surfaced a real,
+    /// pre-existing bug fixed as part of this same PR: EventAPIController's
+    /// GET routes had no authenticator on them at all, so a valid Bearer
+    /// token was silently ignored and every caller was treated as
+    /// anonymous -- see EventAPIController.boot's own doc comment on the
+    /// fix. This test pins down the now-correct behavior in both
+    /// directions: a member's valid token grants access, a non-member's
+    /// (still valid, just wrong) token doesn't.
+    func testPrivateGroupEventVisibleToMemberViaAPINotToOutsider() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-api-owner@example.com", plan: .premium)
+            let member = try await makeUser(db: app.db, email: "group-api-member@example.com")
+            let outsider = try await makeUser(db: app.db, email: "group-api-outsider@example.com")
+            let group = Group(name: "API Visibility Group", slug: "api-visibility-group-\(UUID())", description: "Members only", ownerID: try owner.requireID())
+            try await group.save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try owner.requireID(), role: .owner).save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try member.requireID(), role: .member).save(on: app.db)
+
+            let eventService = EventService(db: app.db)
+            let event = try await eventService.createEvent(
+                CreateEventRequest(
+                    title: "API-Only Visible Event",
+                    description: "Sensitive",
+                    category: .culture,
+                    date: Date().addingTimeInterval(3600),
+                    cityAddress: "Test City", cityLat: 0, cityLng: 0,
+                    venueAddress: "Secret Venue", venueLat: 0, venueLng: 0,
+                    hostGroupID: try group.requireID(),
+                    visibility: .private
+                ),
+                hostUserID: try owner.requireID()
+            )
+            let path = "/api/v1/events/\(try event.requireID())"
+
+            func token(for user: User) throws -> String {
+                let req = Request(application: app, on: app.eventLoopGroup.any())
+                return try req.jwt.sign(UserJWTPayload.make(userID: try user.requireID()))
+            }
+
+            try await app.test(.GET, path, headers: ["Authorization": "Bearer \(try token(for: member))"]) { res async in
+                XCTAssertEqual(res.status, .ok, "A member's valid token should grant access via the API.")
+                XCTAssertTrue(res.body.string.contains("API-Only Visible Event"))
+            }
+
+            try await app.test(.GET, path, headers: ["Authorization": "Bearer \(try token(for: outsider))"]) { res async in
+                XCTAssertEqual(res.status, .notFound, "A non-member's token must not grant access, even though it's otherwise valid.")
+            }
+
+            try await app.test(.GET, path) { res async in
+                XCTAssertEqual(res.status, .notFound, "An anonymous request (no token at all) must also be rejected.")
+            }
+        }
+    }
+
+    /// M6 acceptance criterion #6: a member of the hosting group can see
+    /// and join that same private event -- the flip side of criterion #5.
+    func testMemberOfHostingGroupCanSeeAndJoinPrivateGroupEvent() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-join-owner@example.com", plan: .premium)
+            let member = try await makeUser(db: app.db, email: "group-join-member@example.com")
+            let group = Group(name: "Join Test Group", slug: "join-test-group-\(UUID())", description: "Test", ownerID: try owner.requireID())
+            try await group.save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try owner.requireID(), role: .owner).save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try member.requireID(), role: .member).save(on: app.db)
+
+            let eventService = EventService(db: app.db)
+            let event = try await eventService.createEvent(
+                CreateEventRequest(
+                    title: "Members-Only Meetup",
+                    description: "Test",
+                    category: .culture,
+                    date: Date().addingTimeInterval(3600),
+                    cityAddress: "Test City", cityLat: 0, cityLng: 0,
+                    venueAddress: "Test Venue", venueLat: 0, venueLng: 0,
+                    hostGroupID: try group.requireID(),
+                    visibility: .private
+                ),
+                hostUserID: try owner.requireID()
+            )
+
+            try await eventService.assertVisible(event, to: try member.requireID())
+            let joined = try await eventService.join(event, userID: try member.requireID())
+            let dto = try await eventService.fullDTO(for: joined, requesterID: try member.requireID())
+            XCTAssertTrue(dto.isRequesterAttending)
+        }
+    }
+
+    /// Independent review (pre-PR) caught that GroupService.upcomingEvents
+    /// never called EventService.assertVisible, so a .private group-hosted
+    /// event rendered straight into the group detail page's Upcoming
+    /// Events tab for a non-member or anonymous visitor -- criterion #5's
+    /// "invisible via listing, direct URL, and API" requirement has a
+    /// fourth leg this milestone's own new UI adds (the tab itself), and
+    /// this pins it down directly at the service level.
+    func testUpcomingEventsExcludesPrivateGroupEventForNonMemberButIncludesForMember() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-upcoming-owner@example.com", plan: .premium)
+            let member = try await makeUser(db: app.db, email: "group-upcoming-member@example.com")
+            let outsider = try await makeUser(db: app.db, email: "group-upcoming-outsider@example.com")
+            let group = Group(name: "Upcoming Events Visibility Group", slug: "upcoming-events-visibility-group-\(UUID())", description: "Test", ownerID: try owner.requireID())
+            try await group.save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try owner.requireID(), role: .owner).save(on: app.db)
+            try await GroupMembership(groupID: try group.requireID(), userID: try member.requireID(), role: .member).save(on: app.db)
+
+            let eventService = EventService(db: app.db)
+            _ = try await eventService.createEvent(
+                CreateEventRequest(
+                    title: "Private Tab-Leak Check",
+                    description: "Sensitive",
+                    category: .culture,
+                    date: Date().addingTimeInterval(3600),
+                    cityAddress: "Test City", cityLat: 0, cityLng: 0,
+                    venueAddress: "Secret Venue", venueLat: 0, venueLng: 0,
+                    hostGroupID: try group.requireID(),
+                    visibility: .private
+                ),
+                hostUserID: try owner.requireID()
+            )
+
+            let groupService = GroupService(db: app.db)
+
+            let forMember = try await groupService.upcomingEvents(of: group, requesterID: try member.requireID())
+            XCTAssertTrue(forMember.contains { $0.title == "Private Tab-Leak Check" }, "A member of the hosting group must see the private event in the Upcoming Events tab.")
+
+            let forOutsider = try await groupService.upcomingEvents(of: group, requesterID: try outsider.requireID())
+            XCTAssertFalse(forOutsider.contains { $0.title == "Private Tab-Leak Check" }, "A non-member must not see the private event in the Upcoming Events tab.")
+
+            let forAnonymous = try await groupService.upcomingEvents(of: group, requesterID: nil)
+            XCTAssertFalse(forAnonymous.contains { $0.title == "Private Tab-Leak Check" }, "An anonymous visitor must not see the private event in the Upcoming Events tab.")
+        }
+    }
+
+    /// `join`/`leave` aren't a numbered M6 acceptance criterion on their
+    /// own, but the Members tab and criterion #6 both presuppose some way
+    /// to become a member -- pins down the two edge cases GroupService's
+    /// own doc comments call out: joining twice is a harmless no-op, and
+    /// an invite-only group rejects joining with a distinct error rather
+    /// than a confusing silent failure (see GroupService.join's doc
+    /// comment on why that workflow is deliberately not built).
+    func testGroupJoinIsIdempotentAndInviteOnlyGroupRejectsJoin() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-join-idempotent-owner@example.com", plan: .premium)
+            // A second Premium owner, not the same "owner" reused for both
+            // groups -- PlanLimitsService.assertCanCreateGroup correctly
+            // enforces one owned group per membership, so a single owner
+            // can't own both publicGroup and inviteOnlyGroup below. Caught
+            // by a real swift test run (plan_limit_exceeded), not by
+            // inspection.
+            let secondOwner = try await makeUser(db: app.db, email: "group-join-idempotent-owner-2@example.com", plan: .premium)
+            let joiner = try await makeUser(db: app.db, email: "group-join-idempotent-joiner@example.com")
+            let service = GroupService(db: app.db)
+
+            let publicGroup = try await service.createGroup(
+                CreateGroupRequest(name: "Open Group", description: "Test", visibility: .public),
+                ownerID: try owner.requireID()
+            )
+            try await service.join(publicGroup, userID: try joiner.requireID())
+            try await service.join(publicGroup, userID: try joiner.requireID())
+            let publicGroupID = try publicGroup.requireID()
+            let joinerID = try joiner.requireID()
+            let memberCount = try await GroupMembership.query(on: app.db)
+                .filter(\.$group.$id == publicGroupID)
+                .filter(\.$user.$id == joinerID)
+                .count()
+            XCTAssertEqual(memberCount, 1, "Joining twice must not create two membership rows.")
+
+            let inviteOnlyGroup = try await service.createGroup(
+                CreateGroupRequest(name: "Closed Group", description: "Test", visibility: .inviteOnly),
+                ownerID: try secondOwner.requireID()
+            )
+            do {
+                try await service.join(inviteOnlyGroup, userID: try joiner.requireID())
+                XCTFail("Joining an invite-only group through the self-serve path should be rejected.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "invite_only")
+            }
+        }
+    }
+
+    /// The owner can't leave their own group through this path (no
+    /// ownership-transfer flow exists) -- see GroupService.leave's doc
+    /// comment for why this is a deliberate rejection, not a bug.
+    func testGroupOwnerCannotLeaveTheirOwnGroup() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-owner-leave@example.com", plan: .premium)
+            let service = GroupService(db: app.db)
+            let group = try await service.createGroup(
+                CreateGroupRequest(name: "Cannot Leave Group", description: "Test"),
+                ownerID: try owner.requireID()
+            )
+            do {
+                try await service.leave(group, userID: try owner.requireID())
+                XCTFail("The owner should not be able to leave their own group.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "owner_cannot_leave")
+            }
+        }
+    }
+
+    /// M6 acceptance criterion #7: the group detail page's three tabs
+    /// (Upcoming Events / About / Members) show correct, distinct content
+    /// for at least 2 groups -- built as a real render test (not just a
+    /// service-layer check) since this is exactly the kind of thing a
+    /// Leaf template bug (the bare-# misparse class already found twice
+    /// this project, M4 and M5) would only surface at render time, and
+    /// because GroupWebController deliberately keeps all role-based
+    /// branching as precomputed booleans rather than Leaf-side enum
+    /// comparisons -- this is what actually proves that wiring renders
+    /// right, not just that the booleans compute correctly in isolation.
+    func testGroupDetailPageRendersThreeTabsWithDistinctContentForTwoGroups() async throws {
+        try await withApp { app in
+            let ownerA = try await makeUser(db: app.db, email: "group-tabs-owner-a@example.com", plan: .premium, displayName: "Owner Alpha")
+            let memberA = try await makeUser(db: app.db, email: "group-tabs-member-a@example.com", displayName: "Member Alpha")
+            let ownerB = try await makeUser(db: app.db, email: "group-tabs-owner-b@example.com", plan: .premium, displayName: "Owner Beta")
+
+            let groupService = GroupService(db: app.db)
+            let groupA = try await groupService.createGroup(
+                CreateGroupRequest(name: "Group Alpha", description: "The first group's about text"),
+                ownerID: try ownerA.requireID()
+            )
+            try await GroupMembership(groupID: try groupA.requireID(), userID: try memberA.requireID(), role: .member).save(on: app.db)
+            let eventService = EventService(db: app.db)
+            _ = try await eventService.createEvent(
+                CreateEventRequest(
+                    title: "Alpha Group Meetup",
+                    description: "Test",
+                    category: .culture,
+                    date: Date().addingTimeInterval(3600),
+                    cityAddress: "Alpha City", cityLat: 0, cityLng: 0,
+                    venueAddress: "Alpha Venue", venueLat: 0, venueLng: 0,
+                    hostGroupID: try groupA.requireID()
+                ),
+                hostUserID: try ownerA.requireID()
+            )
+
+            let groupB = try await groupService.createGroup(
+                CreateGroupRequest(name: "Group Beta", description: "The second group's about text"),
+                ownerID: try ownerB.requireID()
+            )
+            // Group Beta deliberately has no upcoming events and no extra
+            // members, to confirm the empty cases render cleanly too (an
+            // empty #for loop, not a template error -- the same class of
+            // check M5's history/UI test did for chat).
+
+            // Takes an id, not the Group returned by createGroup(_:ownerID:)
+            // directly -- that object never eager-loads $owner (only
+            // find/find(slug:)/publicGroups() do, per toDTO's own doc
+            // comment), matching how the real page gets there in
+            // production: GroupWebController.create() redirects to
+            // /groups/:slug, which re-fetches through find(slug:).
+            // Calling toDTO on the raw createGroup(_:) result crashes
+            // with FluentKit's "Parent relation not eager loaded" --
+            // caught by a real swift test run, not by inspection.
+            func render(_ groupID: UUID, requesterID: UUID?) async throws -> String {
+                let service = GroupService(db: app.db)
+                guard let group = try await service.find(groupID) else {
+                    XCTFail("Group must exist immediately after creation.")
+                    return ""
+                }
+                let dto = try await service.toDTO(group, requesterID: requesterID)
+                let upcoming = try await service.upcomingEvents(of: group, requesterID: requesterID)
+                let members = try await service.members(of: group)
+                let isOwner = dto.requesterRole == .owner
+                let req = Request(application: app, on: app.eventLoopGroup.any())
+                let view = try await req.view.render("pages/group-detail", GroupWebController.GroupDetailPageContext(
+                    title: dto.name,
+                    group: dto,
+                    upcomingEvents: upcoming,
+                    isSignedIn: requesterID != nil,
+                    isOwner: isOwner,
+                    isMemberNotOwner: dto.isRequesterMember && !isOwner,
+                    canJoin: requesterID != nil && !dto.isRequesterMember,
+                    isInviteOnlyAndNotMember: false,
+                    members: members.map { GroupWebController.MemberRowContext(member: $0, isPromotable: isOwner && $0.role == .member, isDemotable: isOwner && $0.role == .moderator) }
+                ))
+                return String(buffer: view.data)
+            }
+
+            let alphaHTML = try await render(try groupA.requireID(), requesterID: try ownerA.requireID())
+            XCTAssertTrue(alphaHTML.contains("Group Alpha"))
+            XCTAssertTrue(alphaHTML.contains("Alpha Group Meetup"), "Group Alpha's own upcoming event should render in its Upcoming Events tab.")
+            XCTAssertTrue(alphaHTML.contains("The first group&#39;s about text") || alphaHTML.contains("The first group's about text"), "Group Alpha's own About text should render.")
+            XCTAssertTrue(alphaHTML.contains("Member Alpha"), "Group Alpha's member should appear in its Members tab.")
+            XCTAssertTrue(alphaHTML.contains("You own this group."), "The owner viewing their own group should see the owner state, not a join/leave button.")
+
+            let betaHTML = try await render(try groupB.requireID(), requesterID: nil)
+            XCTAssertTrue(betaHTML.contains("Group Beta"))
+            XCTAssertTrue(betaHTML.contains("No upcoming events yet."), "Group Beta has no events -- the empty case must render cleanly.")
+            XCTAssertTrue(betaHTML.contains("The second group&#39;s about text") || betaHTML.contains("The second group's about text"))
+            XCTAssertFalse(betaHTML.contains("Alpha Group Meetup"), "Group Beta's page must not leak Group Alpha's event.")
+            XCTAssertFalse(betaHTML.contains("Member Alpha"), "Group Beta's page must not leak Group Alpha's member.")
+            XCTAssertTrue(betaHTML.contains("Sign in to join"), "An anonymous visitor should see the sign-in prompt, not a join button.")
+        }
+    }
+
+    /// Requested after the M6 human checkpoint: every destructive action
+    /// (cancel an event, leave an event/group, remove a moderator) must
+    /// confirm before firing -- see architecture doc §15's convention,
+    /// written down as part of this fix. Also guards against ever
+    /// reintroducing the M4 double-confirm-dialog bug this same pass
+    /// fixed (hx-confirm plus a matching onsubmit="return confirm(...)"
+    /// on the same form showed the browser's dialog twice in a row).
+    func testDestructiveActionButtonsHaveConfirmDialogsNotDoubleDialogs() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "confirm-event-host@example.com")
+            let attendee = try await makeUser(db: app.db, email: "confirm-event-attendee@example.com")
+            let eventService = EventService(db: app.db)
+            let event = try await eventService.createEvent(makeEventRequest(title: "Confirm Dialog Test Event"), hostUserID: try host.requireID())
+            _ = try await eventService.join(event, userID: try attendee.requireID())
+            let attendeeDTO = try await eventService.fullDTO(for: event, requesterID: try attendee.requireID())
+            let hostDTO = try await eventService.fullDTO(for: event, requesterID: try host.requireID())
+
+            let req = Request(application: app, on: app.eventLoopGroup.any())
+
+            let leaveView = try await req.view.render("partials/event-fragment", EventWebController.EventFragmentContext(
+                event: attendeeDTO,
+                isSignedIn: true,
+                canManage: false
+            ))
+            let leaveHTML = String(buffer: leaveView.data)
+            XCTAssertTrue(leaveHTML.contains(#"hx-confirm="Leave this event?""#), "Leaving an event should confirm.")
+
+            let cancelView = try await req.view.render("partials/event-fragment", EventWebController.EventFragmentContext(
+                event: hostDTO,
+                isSignedIn: true,
+                canManage: true
+            ))
+            let cancelHTML = String(buffer: cancelView.data)
+            XCTAssertTrue(cancelHTML.contains(#"hx-confirm="Cancel this event?""#), "Cancelling an event should confirm.")
+            XCTAssertFalse(cancelHTML.contains("onsubmit="), "hx-confirm alone, not also onsubmit's own confirm() -- together they show the dialog twice.")
+
+            let groupOwner = try await makeUser(db: app.db, email: "confirm-group-owner@example.com", plan: .premium)
+            let groupMember = try await makeUser(db: app.db, email: "confirm-group-member@example.com", displayName: "Moderator To Remove")
+            let groupService = GroupService(db: app.db)
+            let group = try await groupService.createGroup(
+                CreateGroupRequest(name: "Confirm Dialog Test Group", description: "Test"),
+                ownerID: try groupOwner.requireID()
+            )
+            let groupID = try group.requireID()
+            try await GroupMembership(groupID: groupID, userID: try groupMember.requireID(), role: .moderator).save(on: app.db)
+
+            guard let reloadedGroup = try await groupService.find(groupID) else {
+                XCTFail("Group must exist immediately after creation.")
+                return
+            }
+            let groupDTO = try await groupService.toDTO(reloadedGroup, requesterID: try groupOwner.requireID())
+            let members = try await groupService.members(of: reloadedGroup)
+            let memberRows = members.map {
+                GroupWebController.MemberRowContext(member: $0, isPromotable: false, isDemotable: $0.role == .moderator)
+            }
+
+            let groupView = try await req.view.render("partials/group-fragment", GroupWebController.GroupFragmentContext(
+                group: groupDTO,
+                isSignedIn: true,
+                isOwner: true,
+                isMemberNotOwner: false,
+                canJoin: false,
+                isInviteOnlyAndNotMember: false,
+                members: memberRows
+            ))
+            let groupHTML = String(buffer: groupView.data)
+            XCTAssertTrue(groupHTML.contains(#"hx-confirm="Remove Moderator To Remove as moderator?""#), "Removing a moderator should confirm, naming who.")
+            XCTAssertFalse(groupHTML.contains("onsubmit="), "No onsubmit double-dialog on the group fragment either.")
+
+            let memberDTO = try await groupService.toDTO(reloadedGroup, requesterID: try groupMember.requireID())
+            let memberFlagsRows = members.map {
+                GroupWebController.MemberRowContext(member: $0, isPromotable: false, isDemotable: false)
+            }
+            let leaveGroupView = try await req.view.render("partials/group-fragment", GroupWebController.GroupFragmentContext(
+                group: memberDTO,
+                isSignedIn: true,
+                isOwner: false,
+                isMemberNotOwner: true,
+                canJoin: false,
+                isInviteOnlyAndNotMember: false,
+                members: memberFlagsRows
+            ))
+            let leaveGroupHTML = String(buffer: leaveGroupView.data)
+            XCTAssertTrue(leaveGroupHTML.contains(#"hx-confirm="Leave this group?""#), "Leaving a group should confirm.")
         }
     }
 }

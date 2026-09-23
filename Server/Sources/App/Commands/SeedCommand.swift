@@ -27,9 +27,18 @@ struct SeedCommand: Command {
     private func runAsync(application: Application, console: Console) async throws {
         let db = application.db
 
+        // heathdj@gmail.com, not a fictional address: AuthService.findOrCreateUser
+        // links a real Google/Apple sign-in to an existing User by verified
+        // email when no OAuthIdentity is linked yet, so seeding the
+        // "primary owner" persona under the actual dev/tester's own email
+        // means a real sign-in lands on this already-Premium,
+        // already-owns-a-group account directly -- no need to impersonate
+        // a fake seeded user to exercise owner/moderator-only paths by
+        // hand. (Requested after the M6 human checkpoint: logging in as
+        // "Alice" required a separate throwaway Google account.)
         let alice = try await findOrCreateUser(
             db: db,
-            email: "alice@example.com",
+            email: "heathdj@gmail.com",
             displayName: "Alice Nakamura",
             photoURL: "https://randomuser.me/api/portraits/women/65.jpg"
         )
@@ -46,10 +55,21 @@ struct SeedCommand: Command {
             photoURL: "https://randomuser.me/api/portraits/women/33.jpg"
         )
 
-        // Alice is Premium so she can own a group (M6); Bob and Carol stay Free.
+        let dana = try await findOrCreateUser(
+            db: db,
+            email: "dana@example.com",
+            displayName: "Dana Kowalski",
+            photoURL: "https://randomuser.me/api/portraits/women/48.jpg"
+        )
+
+        // Alice and Dana are Premium so each can own a group (M6);
+        // Bob and Carol stay Free. Two Premium owners, two groups --
+        // M6 acceptance criterion #7 needs at least 2 seeded groups with
+        // distinct content to exercise the group detail page's tabs.
         try await setPlan(db: db, userID: alice.requireID(), plan: .premium)
         try await setPlan(db: db, userID: bob.requireID(), plan: .free)
         try await setPlan(db: db, userID: carol.requireID(), plan: .free)
+        try await setPlan(db: db, userID: dana.requireID(), plan: .premium)
 
         let group = try await findOrCreateGroup(
             db: db,
@@ -61,6 +81,22 @@ struct SeedCommand: Command {
         try await findOrCreateMembership(db: db, groupID: group.requireID(), userID: alice.requireID(), role: .owner)
         try await findOrCreateMembership(db: db, groupID: group.requireID(), userID: bob.requireID(), role: .moderator)
         try await findOrCreateMembership(db: db, groupID: group.requireID(), userID: carol.requireID(), role: .member)
+
+        // Second seeded group (M6 criterion #7): a different owner,
+        // different members (Bob overlaps as a plain member here despite
+        // being a moderator of the first group -- membership in more than
+        // one group is unrestricted; only *owning* more than one is
+        // plan-limited, per PlanLimitsService.assertCanCreateGroup), and
+        // its own distinct upcoming event below.
+        let secondGroup = try await findOrCreateGroup(
+            db: db,
+            slug: "foodies-lisbon",
+            name: "Foodies Lisbon",
+            description: "Sharing the best (and cheapest) eats in Lisbon.",
+            ownerID: dana.requireID()
+        )
+        try await findOrCreateMembership(db: db, groupID: secondGroup.requireID(), userID: dana.requireID(), role: .owner)
+        try await findOrCreateMembership(db: db, groupID: secondGroup.requireID(), userID: bob.requireID(), role: .member)
 
         _ = try await findOrCreateEvent(
             db: db,
@@ -90,7 +126,21 @@ struct SeedCommand: Command {
             hostGroupID: group.requireID()
         )
 
-        console.print("Seed complete: 3 users, 1 group (owner + moderator + member), 2 events.")
+        _ = try await findOrCreateEvent(
+            db: db,
+            title: "Lisbon Food Crawl",
+            description: "Group meetup for the second seeded group -- a walking tour of Alfama's best tascas.",
+            category: .food,
+            date: Date().addingTimeInterval(60 * 60 * 24 * 21),
+            cityAddress: "Lisbon, Portugal",
+            cityLat: 38.7071891, cityLng: -9.1354558,
+            venueAddress: "Miradouro de Santa Luzia, Lisbon, Portugal",
+            venueLat: 38.7117, venueLng: -9.1306,
+            hostUserID: nil,
+            hostGroupID: secondGroup.requireID()
+        )
+
+        console.print("Seed complete: 4 users, 2 groups, 3 events.")
     }
 
     private func findOrCreateUser(db: Database, email: String, displayName: String, photoURL: String?) async throws -> User {
@@ -117,10 +167,36 @@ struct SeedCommand: Command {
         try await sub.save(on: db)
     }
 
+    /// Reconciles ownership on every run, not just on first insert --
+    /// found by an independent review after the heathdj@gmail.com seed
+    /// change: matching by slug alone and never revisiting `ownerID` on an
+    /// existing row meant re-running `seed` against a DB seeded under the
+    /// old alice@example.com would leave the group FK-owned by the old
+    /// row while a brand-new heathdj@gmail.com row got a second,
+    /// orphaned `GroupMembership(role: .owner)` -- `promoteModerator`
+    /// (FK-based) and `PlanLimitsService` (membership-row-based) would
+    /// then disagree about who actually owns the group. Demoting the old
+    /// owner's membership to `.member` rather than deleting it keeps
+    /// them in the group's data (still a real seeded person) without
+    /// leaving two "owner" rows for one group.
     private func findOrCreateGroup(
         db: Database, slug: String, name: String, description: String, ownerID: UUID
     ) async throws -> Group {
         if let existing = try await Group.query(on: db).filter(\.$slug == slug).first() {
+            if existing.$owner.id != ownerID {
+                let oldOwnerID = existing.$owner.id
+                existing.$owner.id = ownerID
+                try await existing.save(on: db)
+                let groupID = try existing.requireID()
+                if let oldOwnerMembership = try await GroupMembership.query(on: db)
+                    .filter(\.$group.$id == groupID)
+                    .filter(\.$user.$id == oldOwnerID)
+                    .first()
+                {
+                    oldOwnerMembership.role = .member
+                    try await oldOwnerMembership.save(on: db)
+                }
+            }
             return existing
         }
         let group = Group(name: name, slug: slug, description: description, ownerID: ownerID)
