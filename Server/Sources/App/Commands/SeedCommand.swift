@@ -167,10 +167,36 @@ struct SeedCommand: Command {
         try await sub.save(on: db)
     }
 
+    /// Reconciles ownership on every run, not just on first insert --
+    /// found by an independent review after the heathdj@gmail.com seed
+    /// change: matching by slug alone and never revisiting `ownerID` on an
+    /// existing row meant re-running `seed` against a DB seeded under the
+    /// old alice@example.com would leave the group FK-owned by the old
+    /// row while a brand-new heathdj@gmail.com row got a second,
+    /// orphaned `GroupMembership(role: .owner)` -- `promoteModerator`
+    /// (FK-based) and `PlanLimitsService` (membership-row-based) would
+    /// then disagree about who actually owns the group. Demoting the old
+    /// owner's membership to `.member` rather than deleting it keeps
+    /// them in the group's data (still a real seeded person) without
+    /// leaving two "owner" rows for one group.
     private func findOrCreateGroup(
         db: Database, slug: String, name: String, description: String, ownerID: UUID
     ) async throws -> Group {
         if let existing = try await Group.query(on: db).filter(\.$slug == slug).first() {
+            if existing.$owner.id != ownerID {
+                let oldOwnerID = existing.$owner.id
+                existing.$owner.id = ownerID
+                try await existing.save(on: db)
+                let groupID = try existing.requireID()
+                if let oldOwnerMembership = try await GroupMembership.query(on: db)
+                    .filter(\.$group.$id == groupID)
+                    .filter(\.$user.$id == oldOwnerID)
+                    .first()
+                {
+                    oldOwnerMembership.role = .member
+                    try await oldOwnerMembership.save(on: db)
+                }
+            }
             return existing
         }
         let group = Group(name: name, slug: slug, description: description, ownerID: ownerID)
