@@ -100,7 +100,7 @@ Work strictly from the acceptance criteria below, milestone by milestone — don
 6. Reloading after the socket disconnects still shows full history (fallback path works).
 
 ### M6 — Groups & group events
-**Deliverables**: group creation (Premium-gated, one per membership), moderator promotion (max 5), directory/detail pages, group-hosted events with public/private visibility.
+**Deliverables**: group creation (Premium-gated, one per membership), moderator promotion (max 5) and removal, directory/detail pages, group-hosted events with public/private visibility.
 
 **Acceptance criteria**
 1. A Free user attempting to create a group sees a clear upgrade prompt, not a raw error.
@@ -110,6 +110,7 @@ Work strictly from the acceptance criteria below, milestone by milestone — don
 5. A private group event is invisible to a non-member via the listing, the direct detail URL, **and** the JSON API — check all three.
 6. A member of the hosting group can see and join that same private event.
 7. The group detail page's three tabs (Upcoming Events / About / Members) show correct, distinct content for at least 2 seeded groups.
+8. An owner (and, once M10 exists, an admin) can remove a member's moderator status, returning them to a plain member — not the same as removing them from the group entirely, which this MVP doesn't build. Added after the M6 human checkpoint, confirmed as needed for the MVP; only the owner-initiated path is built now — the admin-initiated path is the same underlying operation and needs no separate implementation once M10's admin auth exists.
 
 ### M7 — Follow & activity feed
 **Deliverables**: follow/unfollow, profile Following/Followers tabs, activity-feed generation on join/leave/follow, feed display.
