@@ -57,8 +57,11 @@ final class AppTests: XCTestCase {
             let eventCount = try await Event.query(on: app.db).count()
             XCTAssertGreaterThanOrEqual(eventCount, 2)
 
+            // M6's seed command now creates 2 groups (Digital Nomads Berlin,
+            // Foodies Lisbon) -- was 1 before M6; this assertion just
+            // hadn't been updated to match the new seed shape yet.
             let groupCount = try await Group.query(on: app.db).count()
-            XCTAssertEqual(groupCount, 1)
+            XCTAssertEqual(groupCount, 2)
         }
     }
 
@@ -1272,14 +1275,14 @@ final class AppTests: XCTestCase {
             let alphaHTML = try await render(try groupA.requireID(), requesterID: try ownerA.requireID())
             XCTAssertTrue(alphaHTML.contains("Group Alpha"))
             XCTAssertTrue(alphaHTML.contains("Alpha Group Meetup"), "Group Alpha's own upcoming event should render in its Upcoming Events tab.")
-            XCTAssertTrue(alphaHTML.contains("The first group&#x27;s about text") || alphaHTML.contains("The first group's about text"), "Group Alpha's own About text should render.")
+            XCTAssertTrue(alphaHTML.contains("The first group&#39;s about text") || alphaHTML.contains("The first group's about text"), "Group Alpha's own About text should render.")
             XCTAssertTrue(alphaHTML.contains("Member Alpha"), "Group Alpha's member should appear in its Members tab.")
             XCTAssertTrue(alphaHTML.contains("You own this group."), "The owner viewing their own group should see the owner state, not a join/leave button.")
 
             let betaHTML = try await render(try groupB.requireID(), requesterID: nil)
             XCTAssertTrue(betaHTML.contains("Group Beta"))
             XCTAssertTrue(betaHTML.contains("No upcoming events yet."), "Group Beta has no events -- the empty case must render cleanly.")
-            XCTAssertTrue(betaHTML.contains("The second group&#x27;s about text") || betaHTML.contains("The second group's about text"))
+            XCTAssertTrue(betaHTML.contains("The second group&#39;s about text") || betaHTML.contains("The second group's about text"))
             XCTAssertFalse(betaHTML.contains("Alpha Group Meetup"), "Group Beta's page must not leak Group Alpha's event.")
             XCTAssertFalse(betaHTML.contains("Member Alpha"), "Group Beta's page must not leak Group Alpha's member.")
             XCTAssertTrue(betaHTML.contains("Sign in to join"), "An anonymous visitor should see the sign-in prompt, not a join button.")
