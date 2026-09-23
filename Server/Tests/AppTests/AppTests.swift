@@ -1143,6 +1143,13 @@ final class AppTests: XCTestCase {
     func testGroupJoinIsIdempotentAndInviteOnlyGroupRejectsJoin() async throws {
         try await withApp { app in
             let owner = try await makeUser(db: app.db, email: "group-join-idempotent-owner@example.com", plan: .premium)
+            // A second Premium owner, not the same "owner" reused for both
+            // groups -- PlanLimitsService.assertCanCreateGroup correctly
+            // enforces one owned group per membership, so a single owner
+            // can't own both publicGroup and inviteOnlyGroup below. Caught
+            // by a real swift test run (plan_limit_exceeded), not by
+            // inspection.
+            let secondOwner = try await makeUser(db: app.db, email: "group-join-idempotent-owner-2@example.com", plan: .premium)
             let joiner = try await makeUser(db: app.db, email: "group-join-idempotent-joiner@example.com")
             let service = GroupService(db: app.db)
 
@@ -1162,7 +1169,7 @@ final class AppTests: XCTestCase {
 
             let inviteOnlyGroup = try await service.createGroup(
                 CreateGroupRequest(name: "Closed Group", description: "Test", visibility: .inviteOnly),
-                ownerID: try owner.requireID()
+                ownerID: try secondOwner.requireID()
             )
             do {
                 try await service.join(inviteOnlyGroup, userID: try joiner.requireID())
