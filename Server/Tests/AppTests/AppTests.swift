@@ -1235,8 +1235,21 @@ final class AppTests: XCTestCase {
             // empty #for loop, not a template error -- the same class of
             // check M5's history/UI test did for chat).
 
-            func render(_ group: Group, requesterID: UUID?) async throws -> String {
+            // Takes an id, not the Group returned by createGroup(_:ownerID:)
+            // directly -- that object never eager-loads $owner (only
+            // find/find(slug:)/publicGroups() do, per toDTO's own doc
+            // comment), matching how the real page gets there in
+            // production: GroupWebController.create() redirects to
+            // /groups/:slug, which re-fetches through find(slug:).
+            // Calling toDTO on the raw createGroup(_:) result crashes
+            // with FluentKit's "Parent relation not eager loaded" --
+            // caught by a real swift test run, not by inspection.
+            func render(_ groupID: UUID, requesterID: UUID?) async throws -> String {
                 let service = GroupService(db: app.db)
+                guard let group = try await service.find(groupID) else {
+                    XCTFail("Group must exist immediately after creation.")
+                    return ""
+                }
                 let dto = try await service.toDTO(group, requesterID: requesterID)
                 let upcoming = try await service.upcomingEvents(of: group, requesterID: requesterID)
                 let members = try await service.members(of: group)
@@ -1256,14 +1269,14 @@ final class AppTests: XCTestCase {
                 return String(buffer: view.data)
             }
 
-            let alphaHTML = try await render(groupA, requesterID: try ownerA.requireID())
+            let alphaHTML = try await render(try groupA.requireID(), requesterID: try ownerA.requireID())
             XCTAssertTrue(alphaHTML.contains("Group Alpha"))
             XCTAssertTrue(alphaHTML.contains("Alpha Group Meetup"), "Group Alpha's own upcoming event should render in its Upcoming Events tab.")
             XCTAssertTrue(alphaHTML.contains("The first group&#x27;s about text") || alphaHTML.contains("The first group's about text"), "Group Alpha's own About text should render.")
             XCTAssertTrue(alphaHTML.contains("Member Alpha"), "Group Alpha's member should appear in its Members tab.")
             XCTAssertTrue(alphaHTML.contains("You own this group."), "The owner viewing their own group should see the owner state, not a join/leave button.")
 
-            let betaHTML = try await render(groupB, requesterID: nil)
+            let betaHTML = try await render(try groupB.requireID(), requesterID: nil)
             XCTAssertTrue(betaHTML.contains("Group Beta"))
             XCTAssertTrue(betaHTML.contains("No upcoming events yet."), "Group Beta has no events -- the empty case must render cleanly.")
             XCTAssertTrue(betaHTML.contains("The second group&#x27;s about text") || betaHTML.contains("The second group's about text"))
