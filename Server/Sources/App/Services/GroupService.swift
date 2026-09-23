@@ -91,8 +91,9 @@ struct GroupService {
     func promoteModerator(_ group: Group, memberUserID: UUID, requesterID: UUID) async throws {
         guard group.$owner.id == requesterID else { throw APIError.forbidden }
 
+        let groupID = try group.requireID()
         guard let membership = try await GroupMembership.query(on: db)
-            .filter(\.$group.$id == try group.requireID())
+            .filter(\.$group.$id == groupID)
             .filter(\.$user.$id == memberUserID)
             .first()
         else {
@@ -102,7 +103,7 @@ struct GroupService {
         guard membership.role == .member else { return }
 
         let currentModeratorCount = try await GroupMembership.query(on: db)
-            .filter(\.$group.$id == try group.requireID())
+            .filter(\.$group.$id == groupID)
             .filter(\.$role == .moderator)
             .count()
         guard currentModeratorCount < PlanLimitsService.freeMaxGroupModerators else {
@@ -135,13 +136,14 @@ struct GroupService {
         guard group.visibility == .public else {
             throw APIError(code: "invite_only", message: "This group is invite-only.")
         }
+        let groupID = try group.requireID()
         let alreadyMember = try await GroupMembership.query(on: db)
-            .filter(\.$group.$id == try group.requireID())
+            .filter(\.$group.$id == groupID)
             .filter(\.$user.$id == userID)
             .count() > 0
         if alreadyMember { return }
 
-        let membership = GroupMembership(groupID: try group.requireID(), userID: userID, role: .member)
+        let membership = GroupMembership(groupID: groupID, userID: userID, role: .member)
         try await membership.save(on: db)
     }
 
@@ -155,8 +157,9 @@ struct GroupService {
         guard group.$owner.id != userID else {
             throw APIError(code: "owner_cannot_leave", message: "The group owner can't leave their own group.")
         }
+        let groupID = try group.requireID()
         try await GroupMembership.query(on: db)
-            .filter(\.$group.$id == try group.requireID())
+            .filter(\.$group.$id == groupID)
             .filter(\.$user.$id == userID)
             .delete()
     }
@@ -164,8 +167,9 @@ struct GroupService {
     // MARK: - Tab data (group detail page)
 
     func members(of group: Group) async throws -> [GroupMemberDTO] {
+        let groupID = try group.requireID()
         let rows = try await GroupMembership.query(on: db)
-            .filter(\.$group.$id == try group.requireID())
+            .filter(\.$group.$id == groupID)
             .with(\.$user)
             .sort(\.$joinedAt, .ascending)
             .all()
@@ -187,8 +191,9 @@ struct GroupService {
     /// mapper — the shape needed here (title/category/date/city/host/
     /// attendee count) is exactly `EventSummaryDTO`.
     func upcomingEvents(of group: Group, requesterID: UUID?) async throws -> [EventSummaryDTO] {
+        let groupID = try group.requireID()
         let events = try await Event.query(on: db)
-            .filter(\.$hostGroup.$id == try group.requireID())
+            .filter(\.$hostGroup.$id == groupID)
             .filter(\.$isCancelled == false)
             .filter(\.$date >= Date())
             .sort(\.$date, .ascending)
@@ -209,13 +214,14 @@ struct GroupService {
     /// for its own `user` relation, rather than silently lazy-loading it
     /// here on every call.
     func toDTO(_ group: Group, requesterID: UUID?) async throws -> GroupDTO {
+        let groupID = try group.requireID()
         let memberCount = try await GroupMembership.query(on: db)
-            .filter(\.$group.$id == try group.requireID())
+            .filter(\.$group.$id == groupID)
             .count()
         var requesterRole: GroupRole?
         if let requesterID {
             requesterRole = try await GroupMembership.query(on: db)
-                .filter(\.$group.$id == try group.requireID())
+                .filter(\.$group.$id == groupID)
                 .filter(\.$user.$id == requesterID)
                 .first()?.role
         }
