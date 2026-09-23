@@ -1485,7 +1485,7 @@ final class AppTests: XCTestCase {
             ))
             let cancelHTML = String(buffer: cancelView.data)
             XCTAssertTrue(cancelHTML.contains(#"hx-confirm="Cancel this event?""#), "Cancelling an event should confirm.")
-            XCTAssertFalse(cancelHTML.contains("onsubmit"), "hx-confirm alone, not also onsubmit's own confirm() -- together they show the dialog twice.")
+            XCTAssertFalse(cancelHTML.contains("onsubmit="), "hx-confirm alone, not also onsubmit's own confirm() -- together they show the dialog twice.")
 
             let groupOwner = try await makeUser(db: app.db, email: "confirm-group-owner@example.com", plan: .premium)
             let groupMember = try await makeUser(db: app.db, email: "confirm-group-member@example.com", displayName: "Moderator To Remove")
@@ -1518,7 +1518,7 @@ final class AppTests: XCTestCase {
             ))
             let groupHTML = String(buffer: groupView.data)
             XCTAssertTrue(groupHTML.contains(#"hx-confirm="Remove Moderator To Remove as moderator?""#), "Removing a moderator should confirm, naming who.")
-            XCTAssertFalse(groupHTML.contains("onsubmit"), "No onsubmit double-dialog on the group fragment either.")
+            XCTAssertFalse(groupHTML.contains("onsubmit="), "No onsubmit double-dialog on the group fragment either.")
 
             let memberDTO = try await groupService.toDTO(reloadedGroup, requesterID: try groupMember.requireID())
             let memberFlagsRows = members.map {
