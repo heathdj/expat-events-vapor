@@ -1048,6 +1048,69 @@ final class AppTests: XCTestCase {
         }
     }
 
+    /// Added after the M6 human checkpoint (owner/admin moderator removal
+    /// confirmed as needed for the MVP): the owner can revoke a
+    /// moderator's role back to a plain member. Mirrors
+    /// testOwnerCanPromoteUpToFiveModeratorsSixthRejected's structure for
+    /// the demote side.
+    func testOwnerCanDemoteModeratorBackToMember() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-demote-owner@example.com", plan: .premium)
+            let moderator = try await makeUser(db: app.db, email: "group-demote-mod@example.com")
+            let service = GroupService(db: app.db)
+            let group = try await service.createGroup(
+                CreateGroupRequest(name: "Demote Test Group", description: "Test"),
+                ownerID: try owner.requireID()
+            )
+            let groupID = try group.requireID()
+            let moderatorID = try moderator.requireID()
+            try await GroupMembership(groupID: groupID, userID: moderatorID, role: .moderator).save(on: app.db)
+
+            try await service.demoteModerator(group, memberUserID: moderatorID, requesterID: try owner.requireID())
+
+            let membership = try await GroupMembership.query(on: app.db)
+                .filter(\.$group.$id == groupID)
+                .filter(\.$user.$id == moderatorID)
+                .first()
+            XCTAssertEqual(membership?.role, .member, "Demoting a moderator should revoke the role, not remove them from the group.")
+
+            // Demoting someone who isn't currently a moderator (already a
+            // plain member here) is a harmless no-op, mirroring
+            // promoteModerator's own idempotent style.
+            try await service.demoteModerator(group, memberUserID: moderatorID, requesterID: try owner.requireID())
+            let stillMember = try await GroupMembership.query(on: app.db)
+                .filter(\.$group.$id == groupID)
+                .filter(\.$user.$id == moderatorID)
+                .first()
+            XCTAssertEqual(stillMember?.role, .member)
+        }
+    }
+
+    /// Only the owner may demote -- a moderator (or anyone else) attempting
+    /// to demote another moderator is rejected the same as promote is.
+    func testOnlyOwnerCanDemoteNotAModerator() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "group-demote-only-owner@example.com", plan: .premium)
+            let moderatorA = try await makeUser(db: app.db, email: "group-demote-only-mod-a@example.com")
+            let moderatorB = try await makeUser(db: app.db, email: "group-demote-only-mod-b@example.com")
+            let service = GroupService(db: app.db)
+            let group = try await service.createGroup(
+                CreateGroupRequest(name: "Owner Only Demotes", description: "Test"),
+                ownerID: try owner.requireID()
+            )
+            let groupID = try group.requireID()
+            try await GroupMembership(groupID: groupID, userID: try moderatorA.requireID(), role: .moderator).save(on: app.db)
+            try await GroupMembership(groupID: groupID, userID: try moderatorB.requireID(), role: .moderator).save(on: app.db)
+
+            do {
+                try await service.demoteModerator(group, memberUserID: try moderatorB.requireID(), requesterID: try moderatorA.requireID())
+                XCTFail("A moderator (not the owner) should not be able to demote another moderator.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "forbidden")
+            }
+        }
+    }
+
     /// M6 acceptance criterion #4: a moderator (not the owner) can create
     /// a group-hosted event; a plain member cannot. The underlying check
     /// (EventService.createEvent's hostGroupID path) already existed
@@ -1366,7 +1429,7 @@ final class AppTests: XCTestCase {
                     isMemberNotOwner: dto.isRequesterMember && !isOwner,
                     canJoin: requesterID != nil && !dto.isRequesterMember,
                     isInviteOnlyAndNotMember: false,
-                    members: members.map { GroupWebController.MemberRowContext(member: $0, isPromotable: isOwner && $0.role == .member) }
+                    members: members.map { GroupWebController.MemberRowContext(member: $0, isPromotable: isOwner && $0.role == .member, isDemotable: isOwner && $0.role == .moderator) }
                 ))
                 return String(buffer: view.data)
             }

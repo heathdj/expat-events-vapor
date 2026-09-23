@@ -1,15 +1,16 @@
 <!--
-  The part of the group-detail page that changes on join/leave/promote
-  (mirrors partials/event-fragment.leaf's role for M4's join/leave/cancel
-  -- see that file's own doc comment for the pattern this follows).
+  The part of the group-detail page that changes on join/leave/promote/
+  demote (mirrors partials/event-fragment.leaf's role for M4's
+  join/leave/cancel -- see that file's own doc comment for the pattern
+  this follows).
   Rendered two ways with the exact same flat context (group, isSignedIn,
   isOwner, isMemberNotOwner, canJoin, isInviteOnlyAndNotMember, members):
     - inline, via \#extend from pages/group-detail.leaf, sharing the
       page's own full context (the same proven pattern event-detail.leaf/
       event-fragment.leaf already use);
-    - standalone, by GroupWebController's join/leave/promote handlers
-      when the request came from htmx (HX-Request header) -- that
-      response replaces just this fragment, via
+    - standalone, by GroupWebController's join/leave/promote/demote
+      handlers when the request came from htmx (HX-Request header) --
+      that response replaces just this fragment, via
       hx-target="\#group-fragment" hx-swap="outerHTML" below.
   Keep this the single source of truth for this markup.
 
@@ -60,6 +61,12 @@
             <form hx-post="/groups/#(group.id)/members/#(row.member.userID)/promote" hx-target="\#group-fragment" hx-swap="outerHTML"
                   method="post" action="/groups/#(group.id)/members/#(row.member.userID)/promote">
                 <button type="submit" class="text-xs text-blue-600 hover:underline">Promote to moderator</button>
+            </form>
+            #endif
+            #if(row.isDemotable):
+            <form hx-post="/groups/#(group.id)/members/#(row.member.userID)/demote" hx-target="\#group-fragment" hx-swap="outerHTML"
+                  method="post" action="/groups/#(group.id)/members/#(row.member.userID)/demote">
+                <button type="submit" class="text-xs text-red-600 hover:underline">Remove as moderator</button>
             </form>
             #endif
         </div>

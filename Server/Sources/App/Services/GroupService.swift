@@ -117,6 +117,42 @@ struct GroupService {
         try await membership.save(on: db)
     }
 
+    /// Added after the M6 human checkpoint (not one of the plan's
+    /// original 7 acceptance criteria, but confirmed as required for the
+    /// MVP): the owner-only counterpart to `promoteModerator` -- revokes
+    /// moderator status back to a plain `.member`, it does not remove
+    /// them from the group entirely. "Remove a moderator" reads most
+    /// naturally as "remove their moderator privilege" (the same sense
+    /// Slack/Discord use for "remove as admin"), not "kick them out" --
+    /// this codebase has no separate "kick a member out" operation at
+    /// all, seeded or planned, so this stays narrowly the mirror image
+    /// of promotion. A future admin-side removal (M10) can call this
+    /// same method once admin auth exists; there is no separate
+    /// admin-only path to duplicate here.
+    ///
+    /// Demoting someone who isn't currently a moderator (a plain member,
+    /// or the owner themselves) is a harmless no-op, exactly matching
+    /// `promoteModerator`'s own idempotent style for an already-target-
+    /// role member -- not an error, since "already not a moderator" is
+    /// the state the caller wanted anyway.
+    func demoteModerator(_ group: Group, memberUserID: UUID, requesterID: UUID) async throws {
+        guard group.$owner.id == requesterID else { throw APIError.forbidden }
+
+        let groupID = try group.requireID()
+        guard let membership = try await GroupMembership.query(on: db)
+            .filter(\.$group.$id == groupID)
+            .filter(\.$user.$id == memberUserID)
+            .first()
+        else {
+            throw APIError.notFound
+        }
+
+        guard membership.role == .moderator else { return }
+
+        membership.role = .member
+        try await membership.save(on: db)
+    }
+
     /// M6's own deliverables list only "group creation, moderator
     /// promotion, directory/detail pages, group-hosted events" — plain
     /// membership join/leave for a `.public` group isn't a numbered

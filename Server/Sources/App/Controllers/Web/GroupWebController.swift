@@ -30,6 +30,7 @@ struct GroupWebController: RouteCollection {
     struct MemberRowContext: Encodable {
         let member: GroupMemberDTO
         let isPromotable: Bool
+        let isDemotable: Bool
     }
 
     /// Same shape as `GroupDetailPageContext` minus the page-level
@@ -84,6 +85,7 @@ struct GroupWebController: RouteCollection {
         authenticated.post("groups", ":groupID", "join", use: join)
         authenticated.post("groups", ":groupID", "leave", use: leave)
         authenticated.post("groups", ":groupID", "members", ":userID", "promote", use: promote)
+        authenticated.post("groups", ":groupID", "members", ":userID", "demote", use: demote)
     }
 
     @Sendable
@@ -185,6 +187,20 @@ struct GroupWebController: RouteCollection {
         return try await respondWithGroupFragment(req: req, group: group)
     }
 
+    /// Owner-only mirror of `promote` -- see `GroupService.demoteModerator`'s
+    /// doc comment for what "remove a moderator" means here (revoke the
+    /// role, not remove them from the group).
+    @Sendable
+    func demote(req: Request) async throws -> Response {
+        let user = try req.auth.require(User.self)
+        let group = try await groupOrNotFound(req)
+        guard let memberIDString = req.parameters.get("userID"), let memberID = UUID(uuidString: memberIDString) else {
+            throw Abort(.badRequest)
+        }
+        try await GroupService(db: req.db).demoteModerator(group, memberUserID: memberID, requesterID: try user.requireID())
+        return try await respondWithGroupFragment(req: req, group: group)
+    }
+
     /// M6 acceptance criterion #6 (htmx fragment update, mirroring M4's
     /// `respondWithEventUpdate`): `req.auth.require` in each of the three
     /// callers above already guarantees a signed-in user, so `isSignedIn`
@@ -226,7 +242,7 @@ struct GroupWebController: RouteCollection {
         let isMemberNotOwner = dto.isRequesterMember && !isOwner
         let canJoin = isSignedIn && !dto.isRequesterMember && group.visibility == .public
         let isInviteOnlyAndNotMember = isSignedIn && !dto.isRequesterMember && group.visibility != .public
-        let rows = members.map { MemberRowContext(member: $0, isPromotable: isOwner && $0.role == .member) }
+        let rows = members.map { MemberRowContext(member: $0, isPromotable: isOwner && $0.role == .member, isDemotable: isOwner && $0.role == .moderator) }
         return MembershipFlags(
             isOwner: isOwner,
             isMemberNotOwner: isMemberNotOwner,
