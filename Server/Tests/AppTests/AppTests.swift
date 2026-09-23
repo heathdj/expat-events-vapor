@@ -912,8 +912,9 @@ final class AppTests: XCTestCase {
                 XCTAssertEqual(error.code, "plan_limit_exceeded")
             }
 
+            let ownerID = try owner.requireID()
             let ownedCount = try await GroupMembership.query(on: app.db)
-                .filter(\.$user.$id == try owner.requireID())
+                .filter(\.$user.$id == ownerID)
                 .filter(\.$role == .owner)
                 .count()
             XCTAssertEqual(ownedCount, 1, "Still only one owned group after the rejected attempt.")
@@ -948,8 +949,9 @@ final class AppTests: XCTestCase {
                 try await service.promoteModerator(group, memberUserID: try member.requireID(), requesterID: try owner.requireID())
             }
 
+            let groupID = try group.requireID()
             let moderatorCount = try await GroupMembership.query(on: app.db)
-                .filter(\.$group.$id == try group.requireID())
+                .filter(\.$group.$id == groupID)
                 .filter(\.$role == .moderator)
                 .count()
             XCTAssertEqual(moderatorCount, 5, "Exactly 5 members should now be moderators.")
@@ -965,7 +967,7 @@ final class AppTests: XCTestCase {
             // even once the cap is reached (it doesn't try to add a 6th).
             try await service.promoteModerator(group, memberUserID: try members[0].requireID(), requesterID: try owner.requireID())
             let stillFive = try await GroupMembership.query(on: app.db)
-                .filter(\.$group.$id == try group.requireID())
+                .filter(\.$group.$id == groupID)
                 .filter(\.$role == .moderator)
                 .count()
             XCTAssertEqual(stillFive, 5)
@@ -1147,9 +1149,11 @@ final class AppTests: XCTestCase {
             )
             try await service.join(publicGroup, userID: try joiner.requireID())
             try await service.join(publicGroup, userID: try joiner.requireID())
+            let publicGroupID = try publicGroup.requireID()
+            let joinerID = try joiner.requireID()
             let memberCount = try await GroupMembership.query(on: app.db)
-                .filter(\.$group.$id == try publicGroup.requireID())
-                .filter(\.$user.$id == try joiner.requireID())
+                .filter(\.$group.$id == publicGroupID)
+                .filter(\.$user.$id == joinerID)
                 .count()
             XCTAssertEqual(memberCount, 1, "Joining twice must not create two membership rows.")
 
