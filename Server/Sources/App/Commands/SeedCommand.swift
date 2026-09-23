@@ -27,9 +27,18 @@ struct SeedCommand: Command {
     private func runAsync(application: Application, console: Console) async throws {
         let db = application.db
 
+        // heathdj@gmail.com, not a fictional address: AuthService.findOrCreateUser
+        // links a real Google/Apple sign-in to an existing User by verified
+        // email when no OAuthIdentity is linked yet, so seeding the
+        // "primary owner" persona under the actual dev/tester's own email
+        // means a real sign-in lands on this already-Premium,
+        // already-owns-a-group account directly -- no need to impersonate
+        // a fake seeded user to exercise owner/moderator-only paths by
+        // hand. (Requested after the M6 human checkpoint: logging in as
+        // "Alice" required a separate throwaway Google account.)
         let alice = try await findOrCreateUser(
             db: db,
-            email: "alice@example.com",
+            email: "heathdj@gmail.com",
             displayName: "Alice Nakamura",
             photoURL: "https://randomuser.me/api/portraits/women/65.jpg"
         )
