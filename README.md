@@ -83,9 +83,17 @@ docker compose up -d   # tests run against real Postgres, not an in-memory subst
 swift test
 ```
 
+Tests use their own database, `expatevents_test` (set in `Server/.env.testing`), because each test migrates and then reverts every table. Before that file existed they shared the dev database, so every `swift test` run wiped your local data. A fresh Docker volume creates `expatevents_test` automatically (`Server/docker/initdb/`); on a volume that already existed, create it once:
+
+```sh
+docker compose exec db createdb -U vapor_username expatevents_test
+```
+
+The app refuses to run the tests against a database whose name doesn't end in `_test`.
+
 ## What's implemented vs. not
 
-See [`MILESTONES.md`](MILESTONES.md) for the authoritative, milestone-by-milestone status. Short version: **M1 (scaffolding & full data model)** and **M4 (events, including Free-tier plan limits and htmx join/leave/cancel)** are done. **M2 (Apple/Google sign-in)** is verified end-to-end on Google — a real browser sign-in creates a session, the nav reflects signed-in/out state correctly, and sign-out works; Apple's sign-in code is built and reviewed but its live verification is deliberately deferred to M13, once a real HTTPS domain exists for Apple's Services ID to register (Apple doesn't allow `localhost`; Google does). M3 and M5–M13 aren't started — they're scoped in the plan and architecture docs, ready for whoever continues.
+See [`MILESTONES.md`](MILESTONES.md) for the authoritative, milestone-by-milestone status. Short version: M1, M2 (on Google; Apple's live verification waits for M13's real domain), M4, M5, M6, M7 and M9 are done; M8 (billing) was skipped for now; M3 and M10–M13 aren't started. [`docs/design-audit.md`](docs/design-audit.md) lists how far each screen is from the design.
 
 ## Deliberately out of scope for this MVP
 
