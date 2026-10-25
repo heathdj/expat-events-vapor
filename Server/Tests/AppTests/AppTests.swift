@@ -2635,7 +2635,9 @@ final class AppTests: XCTestCase {
                                           attendeeLimit: 10)
             try await app.test(.POST, "/api/v1/events", headers: ["Authorization": "Bearer \(token)"],
                                beforeRequest: { (req: inout XCTHTTPRequest) async throws in
-                                   try req.content.encode(body)
+                                   // As JSON explicitly: CreateEventRequest is a shared-package
+                                   // DTO without Vapor's Content conformance.
+                                   try req.content.encode(body, as: .json)
                                },
                                afterResponse: { (res: XCTHTTPResponse) async throws in
                                    XCTAssertEqual(res.status, .forbidden, "The API maps plan-limit errors to 403.")

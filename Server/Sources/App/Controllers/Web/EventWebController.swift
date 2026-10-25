@@ -174,10 +174,15 @@ struct EventWebController: RouteCollection {
         // space, so a city like "A+B" would turn into "A B" from page 2 on.
         var allowed = CharacterSet.urlQueryAllowed
         allowed.remove(charactersIn: "+&=#?/")
-        let query = items.map { item in
+        // Explicitly `String`: unannotated, Swift inferred SQLKit's
+        // SQLQueryString here (SQLKit adds a joined(separator:) for it),
+        // and the URL was built through SQL-interpolation code paths. The
+        // compiler flagged it with a deprecation warning.
+        let pairs: [String] = items.map { (item: URLQueryItem) -> String in
             let value = (item.value ?? "").addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
-            return "\(item.name)=\(value)"
-        }.joined(separator: "&")
+            return item.name + "=" + value
+        }
+        let query: String = pairs.joined(separator: "&")
         return "/events?\(query)"
     }
 
