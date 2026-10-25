@@ -105,10 +105,19 @@ private func registerMigrations(_ app: Application) {
     app.migrations.add(CreateDeletionRequest())
     app.migrations.add(CreateDataExportRequest())
     app.migrations.add(CreateAdminAuditLog())
+
+    // M9 additions -- appended after the original M1 set, never inserted
+    // into it, so an already-migrated database only runs these two.
+    app.migrations.add(AddUserErasedAt())
+    app.migrations.add(AddFeedbackContactFields())
 }
 
 // MARK: - Commands
 
 private func registerCommands(_ app: Application) {
     app.commands.use(SeedCommand(), as: "seed")
+    // M9. Run by hand locally; in production (M13) a DigitalOcean
+    // scheduled job / cron runs both daily. See each command's doc comment.
+    app.commands.use(ProcessDeletionsCommand(), as: "process-deletions")
+    app.commands.use(RetentionCleanupCommand(), as: "retention-cleanup")
 }
