@@ -1,5 +1,17 @@
 # Choosing a mapping provider: decision plan
 
+## Decision (2026-10-25)
+
+Made by the user after checking the open questions directly with Apple:
+
+- **Apple allows storing coordinates**, so the storage question that made Apple "unclear" in §2 is resolved in its favour.
+- **MapKit JS has no time zone** for a place. The usual approach is a coordinates-to-time-zone library, and we'll use [`tzf-swift`](https://github.com/ringsaturn/tzf-swift) (MIT, bundled boundary data, no network calls, builds on Linux).
+- **Development uses Google** (already set up). Whether to switch to Apple is decided before launch (M13). Google's terms only allow keeping coordinates for 30 days and forbid showing its place results on a non-Google map, so launching on Google would also mean a coordinate refresh job (§6, option b). That's one more point in Apple's favour at that decision.
+- **Everything sits behind a provider-neutral package**, so switching is a configuration change plus one adapter: a place-search provider protocol (autocomplete and place lookup) and a time-zone resolver protocol, with `tzf-swift` filling in the time zone whenever the provider doesn't return one (Google's Place Details doesn't in its cheapest tier, Apple doesn't at all).
+
+The spike in §4 is no longer needed to choose; its city/venue test list remains useful as a quality check when the Apple adapter is written.
+
+
 Drafted 2026-10-25. Goal: pick one mapping and places provider (or a deliberate mix) for local development and for production, with evidence rather than habit. This is a plan to *make* the decision. It ends in a short spike and a scored comparison, not a pre-made answer.
 
 ## 1. What the app needs maps for
