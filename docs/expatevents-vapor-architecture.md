@@ -209,6 +209,7 @@ Once the API stabilizes — or a mobile team ships on its own release cadence �
 | `/account/passkeys` | Manage registered passkeys and linked Apple/Google identities |
 | `/login`, `/register` | Auth — "Continue with Passkey," "Continue with Apple," "Continue with Google"; no password field |
 | `/privacy`, `/terms` | Static content — versioned; a material change re-triggers consent |
+| `/feedback` | Submit-a-message form; works signed-in or signed-out (`Feedback.userID` is optional) — added to M9's scope after the M7 checkpoint, mirroring the `Feedback` model that's existed since M1 with no page ever built against it |
 
 **htmx fragment endpoints** (partial HTML, swapped into the page):
 

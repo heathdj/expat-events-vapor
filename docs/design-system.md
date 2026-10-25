@@ -8,7 +8,7 @@ This is a reference doc, not a build target in itself — it exists so anyone (h
 
 | Canvas file | Canvas title | Maps to |
 |---|---|---|
-| `Main.dc.html` | Home | New public marketing landing page (`/`) — doesn't exist yet, being added |
+| `Main.dc.html` | Home | Public marketing landing page (`/`), signed-out only — built in M7 (`pages/home.leaf` + `Public/css/home.css`), the first screen in this list actually styled from these tokens |
 | `Events.dc.html` | Events | `/events` dashboard (M4, built) |
 | `EventDetail.dc.html` | Event detail | `/events/:id` (M4, built — chat panel itself is M5) |
 | `Groups.dc.html` | Groups | Group directory/detail (M6, not yet built) |
