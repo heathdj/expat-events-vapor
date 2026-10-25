@@ -15,6 +15,7 @@ public func configure(_ app: Application) async throws {
     app.chatRoomRegistry = ChatRoomRegistry()
 
     app.views.use(.leaf)
+    app.leaf.tags["eventDate"] = EventDateTag()
     app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
 
     registerMigrations(app)
@@ -31,6 +32,18 @@ public func configure(_ app: Application) async throws {
 /// `DATABASE_PORT` / `DATABASE_USERNAME` / `DATABASE_PASSWORD` /
 /// `DATABASE_NAME` variables used for local development (see `.env.example`).
 private func configureDatabase(_ app: Application) throws {
+    // The test suite reverts every migration around each test. Pointed at
+    // a real database that would erase it, which is exactly what happened
+    // to the dev database until .env.testing existed. Refuse outright.
+    if app.environment == .testing {
+        let name = Environment.get("DATABASE_URL")
+            .flatMap { URLComponents(string: $0)?.path.split(separator: "/").last.map(String.init) }
+            ?? Environment.get("DATABASE_NAME")
+            ?? ""
+        guard name.hasSuffix("_test") else {
+            fatalError("Tests must run against a database whose name ends in \"_test\" (got \"\(name)\"). See Server/.env.testing.")
+        }
+    }
     if let databaseURL = Environment.get("DATABASE_URL") {
         try app.databases.use(.postgres(url: databaseURL), as: .psql)
     } else {

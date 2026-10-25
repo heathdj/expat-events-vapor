@@ -18,6 +18,18 @@ struct GroupService {
         try await Group.query(on: db).filter(\.$slug == slug).with(\.$owner).first()
     }
 
+    /// Groups this user may host events for -- the ones they own or
+    /// moderate (M6's rule, enforced again in `EventService.createEvent`).
+    /// Backs the create-event form's "Host as" choice.
+    func manageableGroups(for userID: UUID) async throws -> [Group] {
+        let memberships = try await GroupMembership.query(on: db)
+            .filter(\.$user.$id == userID)
+            .filter(\.$role ~~ [.owner, .moderator])
+            .with(\.$group)
+            .all()
+        return memberships.map(\.group).sorted { $0.name < $1.name }
+    }
+
     /// The group directory (`/groups`) only ever lists `.public` groups.
     /// `.inviteOnly` groups exist in the data model but this MVP
     /// deliberately doesn't build the "request to join" workflow for them

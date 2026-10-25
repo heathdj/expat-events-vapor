@@ -56,19 +56,52 @@ struct PlanLimitsService {
         }
     }
 
+    /// An explicit attendee limit set at creation must be at least 1 and no
+    /// higher than the host's plan cap: 5 for a Free self-hosted event, 100
+    /// (the Premium default) otherwise, including group-hosted events
+    /// (`hostUserID` nil), whose owner is Premium by construction (M6).
+    /// Without this, a Free host could have lifted their own 5-attendee
+    /// cap just by typing a bigger number, since an explicit limit wins
+    /// in `attendeeLimit(for:)` below.
+    func assertCanSetAttendeeLimit(_ limit: Int, hostUserID: UUID?) async throws {
+        guard limit >= 1 else {
+            throw APIError(code: "invalid_attendee_limit", message: "The attendee limit must be at least 1.")
+        }
+        if let hostUserID {
+            let sub = try await subscription(for: hostUserID)
+            if !sub.isActivePremium {
+                guard limit <= Self.freeMaxAttendeesPerEvent else {
+                    throw APIError.planLimit("Free accounts can have up to \(Self.freeMaxAttendeesPerEvent) attendees per event. Upgrade to Premium for up to \(Self.premiumDefaultAttendeeLimit).")
+                }
+                return
+            }
+        }
+        guard limit <= Self.premiumDefaultAttendeeLimit else {
+            throw APIError.planLimit("Events can have up to \(Self.premiumDefaultAttendeeLimit) attendees.")
+        }
+    }
+
     /// The effective attendee cap for an event: an explicit `attendeeLimit`
     /// wins; otherwise it falls back to the host's plan default.
+    ///
+    /// An explicit limit is still held to the host's *current* plan cap:
+    /// a Premium host who set 100 and later dropped to Free gets 5, the
+    /// same as if they'd left it empty (found by the event-basics review;
+    /// otherwise one month of Premium bought a permanent 100-person cap).
     func attendeeLimit(for event: Event) async throws -> Int {
-        if let explicit = event.attendeeLimit {
-            return explicit
-        }
+        let planCap: Int
         if let hostUserID = event.$hostUser.id {
             let sub = try await subscription(for: hostUserID)
-            return sub.isActivePremium ? Self.premiumDefaultAttendeeLimit : Self.freeMaxAttendeesPerEvent
+            planCap = sub.isActivePremium ? Self.premiumDefaultAttendeeLimit : Self.freeMaxAttendeesPerEvent
+        } else {
+            // Group-hosted: the group's owner must be Premium (M6), so the
+            // Premium default applies.
+            planCap = Self.premiumDefaultAttendeeLimit
         }
-        // Group-hosted: the group's owner must be Premium (M6), so the
-        // Premium default applies.
-        return Self.premiumDefaultAttendeeLimit
+        if let explicit = event.attendeeLimit {
+            return min(explicit, planCap)
+        }
+        return planCap
     }
 
     /// M4 acceptance criterion #2: a Free-tier event accepts up to 5
