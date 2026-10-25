@@ -6,8 +6,17 @@ Package.resolved
 
 # Vapor
 Server/.env
-Server/Public/css/*.css
-!Server/Public/css/.gitkeep
+
+# NOTE: Server/Public/css/*.css used to be blanket-ignored here, written
+# at M1 in anticipation of a future Tailwind CLI build step (architecture
+# doc §15) generating compiled output into this directory. It silently
+# swallowed M7's hand-written home.css and design-tokens.css too --
+# `git status` never flags an ignored file as untracked, so this went
+# unnoticed until caught while preparing PR #7. Removed rather than
+# patched with per-file negations: right now nothing generates CSS into
+# this directory, so there's no actual build artifact to hide. When the
+# real Tailwind build step ships, give ITS specific output filename its
+# own ignore rule instead of blanket-ignoring the whole directory again.
 
 # macOS
 .DS_Store

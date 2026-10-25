@@ -58,3 +58,34 @@ public struct ProfileDTO: Codable, Sendable, Equatable, Identifiable {
         self.hostedEvents = hostedEvents
     }
 }
+
+
+/// One row in a profile's Followers or Following tab (`GET /api/v1/profile/:id`
+/// isn't built until M11, but this is the shape both the web `ProfileWebController`
+/// and that future API surface use — same "DTO first, both surfaces read it"
+/// convention as `GroupMemberDTO`). `id` is the `Follow` row's own id, not
+/// `userID` — matches `GroupMemberDTO`'s `id`-is-the-membership-row-not-the-user
+/// shape for the same reason (Identifiable needs a stable per-row id, and two
+/// different Follow rows can point at the same `userID` from two different
+/// viewer's tabs).
+public struct FollowSummaryDTO: Codable, Sendable, Equatable, Identifiable {
+    public let id: UUID
+    public let userID: UUID
+    public let displayName: String
+    public let photoURL: String?
+    public let followedAt: Date
+
+    public init(
+        id: UUID,
+        userID: UUID,
+        displayName: String,
+        photoURL: String?,
+        followedAt: Date
+    ) {
+        self.id = id
+        self.userID = userID
+        self.displayName = displayName
+        self.photoURL = photoURL
+        self.followedAt = followedAt
+    }
+}

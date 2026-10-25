@@ -65,15 +65,16 @@ Work strictly from the acceptance criteria below, milestone by milestone — don
 7. Signing out invalidates the web session.
 
 ### M3 — Auth: Passkeys *(stretch — see escape hatch)*
-**Deliverables**: WebAuthn registration/authentication via `swift-server/swift-webauthn`; `/account/passkeys` management UI.
+**Deliverables**: WebAuthn registration/authentication via `swift-server/swift-webauthn`; `/account/passkeys` management UI; a public `/register` entry point.
 
 **Acceptance criteria**
 1. A signed-in user can register a passkey from `/account/passkeys`, creating a `PasskeyCredential` linked to their **existing** account, not a new one.
 2. A signed-out user can sign in with a previously registered passkey and lands on the same account.
 3. `/account/passkeys` lists credentials with a device label and lets the user remove one; a removed credential can no longer authenticate.
 4. A replayed/tampered assertion is rejected, not accepted.
+5. A signed-out visitor can create a **brand-new** account from `/register` via passkey — distinct from criterion #1, which adds a credential to an account that already exists. Until this ships, account creation only happens implicitly through Apple/Google sign-in's `findOrCreateUser`, which is why the home page's nav "Register" button was removed in M7 (added at the user's request after the M7 checkpoint) rather than left pointing at `/login`, where it did nothing a "Log in" button didn't already do. This criterion is what that button comes back for.
 
-**Escape hatch**: if the alpha-stage library blocks this milestone, ship MVP with M2 only, file this as an immediate fast-follow, and don't let it block M4 onward.
+**Escape hatch**: if the alpha-stage library blocks this milestone, ship MVP with M2 only, file this as an immediate fast-follow, and don't let it block M4 onward. If the escape hatch is taken, the home page's "Register" button stays removed rather than reappearing pointed at nothing.
 
 ### M4 — Events
 **Deliverables**: create/edit/cancel (self-hosted only — group-hosting arrives in M6), browse/filter dashboard, event detail, join/leave, Free-tier plan-limit enforcement.
@@ -113,7 +114,7 @@ Work strictly from the acceptance criteria below, milestone by milestone — don
 8. An owner (and, once M10 exists, an admin) can remove a member's moderator status, returning them to a plain member — not the same as removing them from the group entirely, which this MVP doesn't build. Added after the M6 human checkpoint, confirmed as needed for the MVP; only the owner-initiated path is built now — the admin-initiated path is the same underlying operation and needs no separate implementation once M10's admin auth exists.
 
 ### M7 — Follow & activity feed
-**Deliverables**: follow/unfollow, profile Following/Followers tabs, activity-feed generation on join/leave/follow, feed display.
+**Deliverables**: follow/unfollow, profile Following/Followers tabs, activity-feed generation on join/leave/follow, feed display, and (added after the M6 PR merged, at the user's request) a public home page.
 
 **Acceptance criteria**
 1. Follow/unfollow creates/removes exactly one `Follow` row; the button updates immediately via htmx.
@@ -121,6 +122,7 @@ Work strictly from the acceptance criteria below, milestone by milestone — don
 3. When a followed user joins an event, an `ActivityFeedItem` (`type = joinedEvent`) appears in the follower's `/feed`.
 4. Unfollowing stops future activity from appearing but doesn't retroactively delete past feed items.
 5. `/api/v1/feed` returns only the requester's own feed, regardless of query parameters passed.
+6. A public home page (`/`) exists. Added after the M6 PR merged, at the user's request ("let's also add in the home page to get more of the base app done") — `/` had no route at all before this and 404'd; `base.leaf`'s own nav already linked there. A signed-out visitor sees a marketing landing page reproducing the content of the pre-Vapor `expatevents.net` site (hero, value props, pricing, groups explainer, footer), styled from the design canvas's Home artboard per `docs/design-system.md` — the first concrete application of that design system in this codebase, everywhere else still being plain Tailwind utility classes per the incremental-rollout decision tracked in `MILESTONES.md`. A signed-in visitor is redirected to `/feed`, which becomes the true post-sign-in landing page — `AuthWebController`'s sign-in handlers redirect there instead of `/events` now, and `/`'s own signed-in behavior is the same redirect, not a second copy of the feed page.
 
 ### M8 — Billing (Stripe)
 **Deliverables**: Checkout session creation, all four webhook handlers from the architecture doc, cancel-at-period-end, admin plan override.
@@ -134,8 +136,8 @@ Work strictly from the acceptance criteria below, milestone by milestone — don
 6. A webhook request with an invalid signature is rejected, not processed.
 7. Replaying the same webhook event id doesn't double-apply its effect (e.g., no duplicate `Invoice` row).
 
-### M9 — Account & GDPR basics
-**Deliverables**: consent versioning at signup, "Download my data," "Delete account," a retention cleanup job.
+### M9 — Account, legal & GDPR basics
+**Deliverables**: consent versioning at signup, "Download my data," "Delete account," a retention cleanup job — plus four pages added to this milestone's scope at the user's request after the M7 checkpoint, none of which previously had a milestone: the actual `/account` profile page (architecture §6 already specified this route; only its GDPR sub-features had acceptance criteria before now), `/privacy` and `/terms` static content pages (architecture §6 and §13 both assumed these exist, but nothing ever scheduled building them), and a `/feedback` page (the `Feedback` model has existed since M1's scaffolding with no page or route ever built against it — the same kind of pre-existing, never-tracked gap the M7 home page turned out to be).
 
 **Acceptance criteria**
 1. Registration records `privacyPolicyVersion`, `termsVersion`, `consentedAt` matching what was actually presented.
@@ -143,6 +145,9 @@ Work strictly from the acceptance criteria below, milestone by milestone — don
 3. "Delete account" creates a `DeletionRequest`; whatever fulfillment path was actually built (admin-actioned or automated — see scope note) hard-deletes identifying `User` fields, anonymizes that user's `ChatMessage`s (not deletes them), and nulls the user reference on their `Invoice` rows (also not deleted).
 4. After deletion, no linked sign-in method (Apple/Google/passkey) can authenticate that account anymore.
 5. The retention job deletes past/cancelled events (and their chat) older than 30 days, for both Free and Premium hosts.
+6. `/account` renders the signed-in user's own profile/plan summary and hosts the "Download my data" and "Delete account" controls from criteria #2–#3 — the page itself, not just its two GDPR actions, which is the gap this milestone's scope was widened to close. Not to be confused with `/profile/:id` (M7's public profile with the Following/Followers/Hosted-events tabs) — `/account` is the private, self-only counterpart architecture §6 already named separately.
+7. `/privacy` and `/terms` render static content, each stamped with the version string that `User.privacyPolicyVersion`/`termsVersion` record at signup (criterion #1) — not placeholder text, and not the same version string hardcoded in two places that could drift apart.
+8. `/feedback` lets both a signed-in and a signed-out visitor submit a message, creating exactly one `Feedback` row (`userID` set for a signed-in submitter, `nil` for anonymous) per submission — no page anywhere in the app should still 404 or dead-link to `/feedback` after this.
 
 ### M10 — Admin web site
 **Deliverables**: `/admin` route group with role middleware; the six sections (Dashboard, Users, Events, Groups, Billing, Data requests, Audit log).

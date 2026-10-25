@@ -55,7 +55,7 @@
         #for(row in members):
         <div class="flex items-center justify-between py-2 text-sm">
             <div>
-                <span class="font-medium">#(row.member.displayName)</span>
+                <a href="/profile/#(row.member.userID)" class="font-medium hover:underline">#(row.member.displayName)</a>
                 <span class="text-xs uppercase tracking-wide text-gray-400 ml-2">#(row.member.role)</span>
             </div>
             #if(row.isPromotable):

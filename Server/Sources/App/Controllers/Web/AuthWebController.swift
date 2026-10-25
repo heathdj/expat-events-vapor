@@ -57,7 +57,14 @@ struct AuthWebController: RouteCollection {
         )
         req.auth.login(user)
         req.session.authenticate(user)
-        return req.redirect(to: "/events")
+        // M7: the activity feed is the post-sign-in landing page now, not
+        // events -- matches what "/" itself now does for a signed-in
+        // visitor (HomeWebController.index), so a fresh sign-in and a
+        // later visit to "/" land in the same place. This is the default
+        // target only -- it does not address the separately tracked
+        // "return to the page you were on before signing in" gap
+        // (MILESTONES.md, M5).
+        return req.redirect(to: "/feed")
     }
 
     @Sendable
@@ -84,7 +91,14 @@ struct AuthWebController: RouteCollection {
         )
         req.auth.login(user)
         req.session.authenticate(user)
-        return req.redirect(to: "/events")
+        // M7: the activity feed is the post-sign-in landing page now, not
+        // events -- matches what "/" itself now does for a signed-in
+        // visitor (HomeWebController.index), so a fresh sign-in and a
+        // later visit to "/" land in the same place. This is the default
+        // target only -- it does not address the separately tracked
+        // "return to the page you were on before signing in" gap
+        // (MILESTONES.md, M5).
+        return req.redirect(to: "/feed")
     }
 
     /// M2 acceptance criterion #7: signing out invalidates the web session.

@@ -1537,4 +1537,327 @@ final class AppTests: XCTestCase {
             XCTAssertTrue(leaveGroupHTML.contains(#"hx-confirm="Leave this group?""#), "Leaving a group should confirm.")
         }
     }
+
+    // MARK: - M7 verification
+
+    /// M7 acceptance criterion #1: follow/unfollow creates/removes
+    /// exactly one `Follow` row. Re-following (or unfollowing someone not
+    /// followed) is idempotent -- no duplicate row, no error -- matching
+    /// `EventService.join`/`GroupService.leave`'s own idempotent style.
+    func testFollowCreatesExactlyOneRowIdempotentlyAndUnfollowRemovesIt() async throws {
+        try await withApp { app in
+            let alice = try await makeUser(db: app.db, email: "m7-follow-alice@example.com", displayName: "Alice")
+            let bob = try await makeUser(db: app.db, email: "m7-follow-bob@example.com", displayName: "Bob")
+            let service = FollowService(db: app.db)
+
+            try await service.follow(followerID: try alice.requireID(), followingID: try bob.requireID())
+            try await service.follow(followerID: try alice.requireID(), followingID: try bob.requireID())
+
+            let rowCount = try await Follow.query(on: app.db)
+                .filter(\.$follower.$id == alice.requireID())
+                .filter(\.$following.$id == bob.requireID())
+                .count()
+            XCTAssertEqual(rowCount, 1, "Following twice must not create a second row.")
+
+            try await service.unfollow(followerID: try alice.requireID(), followingID: try bob.requireID())
+            try await service.unfollow(followerID: try alice.requireID(), followingID: try bob.requireID())
+            let afterUnfollow = try await Follow.query(on: app.db)
+                .filter(\.$follower.$id == alice.requireID())
+                .filter(\.$following.$id == bob.requireID())
+                .count()
+            XCTAssertEqual(afterUnfollow, 0)
+        }
+    }
+
+    /// `CreateFollow`'s migration adds a DB-level `follow_no_self_follow`
+    /// CHECK constraint; `FollowService.follow` rejects this itself first
+    /// so the caller gets a structured `APIError`, not a raw constraint
+    /// violation surfacing as a 500.
+    func testCannotFollowSelf() async throws {
+        try await withApp { app in
+            let alice = try await makeUser(db: app.db, email: "m7-follow-self@example.com")
+            let service = FollowService(db: app.db)
+            do {
+                try await service.follow(followerID: try alice.requireID(), followingID: try alice.requireID())
+                XCTFail("Following yourself should be rejected.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "cannot_follow_self")
+            }
+        }
+    }
+
+    /// M7 acceptance criterion #2: a profile's Followers/Following counts
+    /// and entries are correct -- checked for two different users (not
+    /// just one), the same "at least 2 distinct seeded entities" QA-parity
+    /// M6's own group tests already established, so a bug that only shows
+    /// up when counts differ per-user can't hide behind a single case.
+    func testFollowerAndFollowingCountsAndEntriesAreCorrectForMultipleUsers() async throws {
+        try await withApp { app in
+            let alice = try await makeUser(db: app.db, email: "m7-counts-alice@example.com", displayName: "Alice")
+            let bob = try await makeUser(db: app.db, email: "m7-counts-bob@example.com", displayName: "Bob")
+            let carol = try await makeUser(db: app.db, email: "m7-counts-carol@example.com", displayName: "Carol")
+            let service = FollowService(db: app.db)
+
+            // Bob and Carol both follow Alice; Carol also follows Bob.
+            try await service.follow(followerID: try bob.requireID(), followingID: try alice.requireID())
+            try await service.follow(followerID: try carol.requireID(), followingID: try alice.requireID())
+            try await service.follow(followerID: try carol.requireID(), followingID: try bob.requireID())
+
+            let aliceFollowerCount = try await service.followerCount(of: try alice.requireID())
+            let aliceFollowingCount = try await service.followingCount(of: try alice.requireID())
+            XCTAssertEqual(aliceFollowerCount, 2)
+            XCTAssertEqual(aliceFollowingCount, 0)
+            let aliceFollowers = try await service.followerEntries(of: try alice.requireID())
+            XCTAssertEqual(Set(aliceFollowers.map(\.displayName)), Set(["Bob", "Carol"]))
+
+            let bobFollowerCount = try await service.followerCount(of: try bob.requireID())
+            let bobFollowingCount = try await service.followingCount(of: try bob.requireID())
+            XCTAssertEqual(bobFollowerCount, 1)
+            XCTAssertEqual(bobFollowingCount, 1)
+            let bobFollowing = try await service.followingEntries(of: try bob.requireID())
+            XCTAssertEqual(bobFollowing.map(\.displayName), ["Alice"])
+        }
+    }
+
+    /// The template-level counterpart of the test above --
+    /// `pages/profile.leaf` must actually render the Followers/Following
+    /// tabs' content, not just have correct data behind them (the same
+    /// distinction `testGroupDetailPageRendersThreeTabsWithDistinctContentForTwoGroups`
+    /// draws for M6's tabs).
+    func testProfilePageRendersFollowersAndFollowingTabsWithCorrectNames() async throws {
+        try await withApp { app in
+            let alice = try await makeUser(db: app.db, email: "m7-profile-page-alice@example.com", displayName: "Alice Profile")
+            let bob = try await makeUser(db: app.db, email: "m7-profile-page-bob@example.com", displayName: "Bob Profile")
+            let carol = try await makeUser(db: app.db, email: "m7-profile-page-carol@example.com", displayName: "Carol Profile")
+            let followService = FollowService(db: app.db)
+            try await followService.follow(followerID: try bob.requireID(), followingID: try alice.requireID())
+            try await followService.follow(followerID: try carol.requireID(), followingID: try alice.requireID())
+
+            let aliceID = try alice.requireID()
+            let dto = try await followService.profile(of: alice, requesterID: try bob.requireID())
+            let followers = try await followService.followerEntries(of: aliceID)
+            let following = try await followService.followingEntries(of: aliceID)
+
+            let req = Request(application: app, on: app.eventLoopGroup.any())
+            let view = try await req.view.render("pages/profile", ProfileWebController.ProfilePageContext(
+                title: dto.displayName,
+                profile: dto,
+                isSignedIn: true,
+                isOwnProfile: false,
+                canFollow: true,
+                followers: followers.map { ProfileWebController.FollowEntryContext(userID: $0.userID, displayName: $0.displayName, photoURL: $0.photoURL) },
+                following: following.map { ProfileWebController.FollowEntryContext(userID: $0.userID, displayName: $0.displayName, photoURL: $0.photoURL) }
+            ))
+            let html = String(buffer: view.data)
+
+            XCTAssertTrue(html.contains("Alice Profile"))
+            XCTAssertTrue(html.contains("2 followers"))
+            XCTAssertTrue(html.contains("Bob Profile"), "Bob should show up in Alice's Followers tab.")
+            XCTAssertTrue(html.contains("Carol Profile"), "Carol should show up in Alice's Followers tab.")
+            XCTAssertTrue(html.contains("No hosted events yet."), "Alice hosts nothing in this test -- the empty case must render cleanly.")
+        }
+    }
+
+    /// M7 acceptance criterion #3: when a followed user joins an event, an
+    /// `ActivityFeedItem` (type joinedEvent) appears in the follower's
+    /// `/feed` -- and only the follower's, not an unrelated third party's.
+    func testJoinedEventByFollowedUserAppearsInFollowerFeedNotInStrangersFeed() async throws {
+        try await withApp { app in
+            let follower = try await makeUser(db: app.db, email: "m7-feed-follower@example.com", displayName: "Follower")
+            let followed = try await makeUser(db: app.db, email: "m7-feed-followed@example.com", displayName: "Followed")
+            let stranger = try await makeUser(db: app.db, email: "m7-feed-stranger@example.com", displayName: "Stranger")
+            try await FollowService(db: app.db).follow(followerID: try follower.requireID(), followingID: try followed.requireID())
+
+            let eventService = EventService(db: app.db)
+            let event = try await eventService.createEvent(makeEventRequest(title: "Feed Test Event"), hostUserID: try stranger.requireID())
+            _ = try await eventService.join(event, userID: try followed.requireID())
+
+            let feedService = FeedService(db: app.db)
+            let followerFeed = try await feedService.feed(for: try follower.requireID())
+            XCTAssertEqual(followerFeed.count, 1)
+            XCTAssertEqual(followerFeed.first?.type, .joinedEvent)
+            XCTAssertEqual(followerFeed.first?.actorDisplayName, "Followed")
+            XCTAssertEqual(followerFeed.first?.eventTitle, "Feed Test Event")
+
+            let strangerFeed = try await feedService.feed(for: try stranger.requireID())
+            XCTAssertTrue(strangerFeed.isEmpty, "A stranger who doesn't follow anyone involved shouldn't see this in their own feed.")
+        }
+    }
+
+    /// M7 acceptance criterion #4: unfollowing stops future activity but
+    /// does not retroactively delete past feed items.
+    func testUnfollowDoesNotRetroactivelyDeletePastFeedItems() async throws {
+        try await withApp { app in
+            let follower = try await makeUser(db: app.db, email: "m7-feed-persist-follower@example.com")
+            let followed = try await makeUser(db: app.db, email: "m7-feed-persist-followed@example.com", displayName: "Followed Persist")
+            let host = try await makeUser(db: app.db, email: "m7-feed-persist-host@example.com")
+            let followService = FollowService(db: app.db)
+            try await followService.follow(followerID: try follower.requireID(), followingID: try followed.requireID())
+
+            let eventService = EventService(db: app.db)
+            let event = try await eventService.createEvent(makeEventRequest(title: "Persisted Feed Event"), hostUserID: try host.requireID())
+            // `followed` is the actor here (matches the criterion's own
+            // scenario: "a followed user joins an event") -- fires exactly
+            // one feed item to `follower`.
+            _ = try await eventService.join(event, userID: try followed.requireID())
+
+            try await followService.unfollow(followerID: try follower.requireID(), followingID: try followed.requireID())
+
+            let feedService = FeedService(db: app.db)
+            let feedAfterUnfollow = try await feedService.feed(for: try follower.requireID())
+            XCTAssertEqual(feedAfterUnfollow.count, 1, "The item generated while still following must survive the unfollow.")
+            XCTAssertEqual(feedAfterUnfollow.first?.eventTitle, "Persisted Feed Event")
+        }
+    }
+
+    /// M7 acceptance criterion #5: `/api/v1/feed` returns only the
+    /// requester's own feed, regardless of query parameters passed --
+    /// there's no `userID` parameter read anywhere in `FeedAPIController`,
+    /// so passing one for a different user must have no effect at all.
+    func testFeedAPIReturnsOnlyRequestersOwnFeedRegardlessOfQueryParams() async throws {
+        try await withApp { app in
+            let requester = try await makeUser(db: app.db, email: "m7-feed-api-requester@example.com")
+            let otherUser = try await makeUser(db: app.db, email: "m7-feed-api-other@example.com", displayName: "Other User")
+            let followedByOther = try await makeUser(db: app.db, email: "m7-feed-api-followed@example.com", displayName: "Followed By Other")
+            // otherUser has feed content of their own; requester has none.
+            try await FollowService(db: app.db).follow(followerID: try otherUser.requireID(), followingID: try followedByOther.requireID())
+            let eventService = EventService(db: app.db)
+            let event = try await eventService.createEvent(makeEventRequest(title: "Other User's Feed Event"), hostUserID: try requester.requireID())
+            _ = try await eventService.join(event, userID: try followedByOther.requireID())
+
+            let req = Request(application: app, on: app.eventLoopGroup.any())
+            let token = try req.jwt.sign(UserJWTPayload.make(userID: try requester.requireID()))
+
+            try await app.test(
+                .GET,
+                "/api/v1/feed?userID=\(try otherUser.requireID())",
+                headers: ["Authorization": "Bearer \(token)"]
+            ) { res async in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertContent([ActivityFeedItemDTO].self, res) { decoded in
+                    XCTAssertTrue(decoded.isEmpty, "The requester has no feed items of their own; a ?userID= for someone else must not change that.")
+                }
+                XCTAssertFalse(
+                    res.body.string.contains("Followed By Other"),
+                    "A ?userID= query parameter naming someone else must not leak their feed."
+                )
+            }
+        }
+    }
+
+    /// M7's home-page addition: a signed-in visitor hitting "/" never
+    /// sees the marketing page -- redirected straight to "/feed", the
+    /// same place a fresh sign-in now lands (AuthWebController).
+    func testHomePageRedirectsSignedInVisitorToFeed() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "m7-home-signed-in@example.com")
+            let cookie = try await sessionCookie(for: user, db: app.db)
+
+            try await app.test(.GET, "/", headers: ["Cookie": cookie]) { res async in
+                XCTAssertEqual(res.status, .seeOther)
+                XCTAssertEqual(res.headers.first(name: .location), "/feed")
+            }
+        }
+    }
+
+    /// A signed-out visitor sees the actual marketing page -- and its
+    /// hero badge shows a real, live event count (the design canvas's own
+    /// "212 events live now" is sample copy, not a spec to carry over
+    /// verbatim -- see HomeWebController.HomePageContext's own doc
+    /// comment).
+    func testHomePageRendersMarketingContentForSignedOutVisitorWithRealEventCount() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "m7-home-signed-out-host@example.com")
+            let eventService = EventService(db: app.db)
+            _ = try await eventService.createEvent(makeEventRequest(title: "Home Page Count Event"), hostUserID: try host.requireID())
+
+            try await app.test(.GET, "/") { res async in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains("Welcome to"))
+                XCTAssertTrue(html.contains("ExpatEvents"))
+                XCTAssertTrue(html.contains("1 events on ExpatEvents"), "The hero badge should reflect the real event count, not hardcoded sample copy.")
+                XCTAssertFalse(html.contains("212 events live now"), "Must not ship the design canvas's own hardcoded sample number.")
+            }
+        }
+    }
+
+    /// Found at the M7 human server-checkpoint: the hero "Get Started"
+    /// button went to /login, gating something that's actually public
+    /// (browsing events) behind a sign-in wall, and the nav's "Register"
+    /// button also went to /login -- indistinguishable from "Log in" and
+    /// misleading, since there's no separate registration flow until M3
+    /// adds passkeys. Fixed in pages/home.leaf; pinned here so a future
+    /// edit can't silently reintroduce either.
+    ///
+    /// This assertion only covers the href in the rendered HTML. A
+    /// second, worse bug against this same button was found one round
+    /// later at the same checkpoint -- Public/css/home.css's `.hero::after`
+    /// decorative overlay had no `pointer-events:none`, so it silently
+    /// ate every click inside `.hero` regardless of what any anchor's
+    /// href said. No test here caught that one, because Vapor's
+    /// `app.test` HTTP client only ever sees rendered HTML, never
+    /// executes CSS layout/paint/hit-testing -- that whole bug class is
+    /// structurally invisible to this suite and only shows up in an
+    /// actual browser, which is exactly what the human server-checkpoint
+    /// step exists to catch. See home.css's own header comment for the
+    /// fix and the full explanation of why it happened.
+    func testHomePageGetStartedLinksToEventsAndHasNoRegisterButton() async throws {
+        try await withApp { app in
+            try await app.test(.GET, "/") { res async in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains(#"href="/events" style="padding:14px 26px;font-size:15.5px;">Get Started"#), "The hero CTA should send an anonymous visitor to /events, not behind a login wall.")
+                XCTAssertFalse(html.contains(">Register<"), "No standalone registration flow exists yet -- tracked as M3 scope, not a dead link to /login here.")
+            }
+        }
+    }
+
+    /// End-to-end: the follow/unfollow button actually works over HTTP
+    /// (route registration + HX-Request fragment swap, not just the
+    /// service method in isolation), and the confirm-dialog convention
+    /// (architecture doc §15) applies to unfollow but not follow -- the
+    /// same distinction `testDestructiveActionButtonsHaveConfirmDialogsNotDoubleDialogs`
+    /// draws for M6's buttons, extended to this milestone's new one.
+    func testFollowUnfollowHtmxFragmentEndToEndAndConfirmDialogOnUnfollowOnly() async throws {
+        try await withApp { app in
+            let viewer = try await makeUser(db: app.db, email: "m7-follow-e2e-viewer@example.com")
+            let target = try await makeUser(db: app.db, email: "m7-follow-e2e-target@example.com", displayName: "Target Person")
+            let cookie = try await sessionCookie(for: viewer, db: app.db)
+            let targetID = try target.requireID()
+
+            try await app.test(.POST, "/profile/\(targetID)/follow", headers: [
+                "Cookie": cookie,
+                "HX-Request": "true",
+            ]) { res async in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains(#"hx-post="/profile/\#(targetID)/unfollow""#), "After following, the fragment should now offer to unfollow.")
+                XCTAssertTrue(html.contains(#"hx-confirm="Unfollow Target Person?""#), "Unfollow is destructive (revokes something the viewer now has) and must confirm.")
+            }
+
+            let followedCount = try await Follow.query(on: app.db)
+                .filter(\.$follower.$id == viewer.requireID())
+                .filter(\.$following.$id == targetID)
+                .count()
+            XCTAssertEqual(followedCount, 1)
+
+            try await app.test(.POST, "/profile/\(targetID)/unfollow", headers: [
+                "Cookie": cookie,
+                "HX-Request": "true",
+            ]) { res async in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains(#"hx-post="/profile/\#(targetID)/follow""#), "After unfollowing, the fragment should offer to follow again.")
+                XCTAssertFalse(html.contains("onsubmit="), "Must not reintroduce the M4/M6 double-confirm-dialog bug -- hx-confirm alone, never also onsubmit=\"return confirm(...)\".")
+            }
+
+            let afterUnfollowCount = try await Follow.query(on: app.db)
+                .filter(\.$follower.$id == viewer.requireID())
+                .filter(\.$following.$id == targetID)
+                .count()
+            XCTAssertEqual(afterUnfollowCount, 0)
+        }
+    }
 }
+

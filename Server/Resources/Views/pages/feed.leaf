@@ -1,0 +1,44 @@
+#extend("layouts/base"):
+#export("body"):
+<!--
+  M7. Each row's message is fully precomputed server-side
+  (FeedWebController.message(for:)) -- see that method's doc comment for
+  why nothing here branches on item.type directly.
+
+  Restyled from plain Tailwind to the shared design-system tokens
+  (Public/css/design-tokens.css) at the user's request, after they
+  noticed the home page used the design system but this one didn't.
+  Feed isn't one of the design canvas's six artboards (see
+  docs/design-system.md's "six screens" table), so this is the tokens
+  and generic .card/.ds-avatar components applied to a layout of this
+  page's own -- not a canvas screen reproduced verbatim. No markup
+  structure or Leaf logic changed here versus the previous version,
+  only which classes render.
+-->
+<h1 class="ds-font-display" style="font-size:24px;margin-bottom:20px;">Your feed</h1>
+
+<div class="card" style="overflow:hidden;">
+    #for(item in items):
+    <div class="ds-feed-row">
+        #if(item.actorPhotoURL):
+        <img src="#(item.actorPhotoURL)" alt="" class="ds-avatar">
+        #else:
+        <div class="ds-avatar ds-avatar-placeholder"></div>
+        #endif
+        <div style="flex:1;">
+            <p class="ds-feed-message">
+                <a href="/profile/#(item.actorUserID)">#(item.actorDisplayName)</a>
+                #(item.message)
+            </p>
+            #if(item.hasEvent):
+            <a href="/events/#(item.eventID)" class="ds-feed-meta-link">View event</a>
+            #endif
+        </div>
+    </div>
+    #endfor
+    #if(count(items) == 0):
+    <p class="ds-empty-state">Nothing here yet — follow someone from their profile to see their activity.</p>
+    #endif
+</div>
+#endexport
+#endextend

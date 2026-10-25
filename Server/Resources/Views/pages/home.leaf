@@ -1,0 +1,250 @@
+<!--
+  Public marketing home page ("/", signed-out only -- HomeWebController
+  redirects a signed-in visitor to /feed before this ever renders). M7,
+  added after the M6 PR merged at the user's request to "get more of the
+  base app done" and to "replicate what currently exists" on the live
+  expatevents.net site, "mimicking the new design documents for styling".
+
+  Content below (hero copy, value props, pricing copy, groups explainer,
+  footer) is reproduced from the live expatevents.net site as read
+  directly in-browser on 2026-09-23. Layout/visual styling comes from the
+  design canvas's Home artboard (Main.dc.html), documented in
+  docs/design-system.md -- see Public/css/home.css's own header comment
+  for why that styling lives in a separate stylesheet rather than a
+  \#import("body")-style <style> block here.
+
+  Two deliberate deviations from a literal copy of the live site, made
+  after the human server-checkpoint:
+  - The nav's "Register" button is gone. The live site's Register flow
+    doesn't exist here -- sign-in is Apple/Google only until M3 adds
+    passkeys, and a "Register" button that just points at /login (the
+    same place "Log in" goes) is misleading, not a placeholder worth
+    keeping. Tracked as a to-do for M3, which is where a real
+    registration entry point belongs.
+  - The hero's primary "Get Started" CTA goes to /events, not /login.
+    Browsing events is public and doesn't require signing in first, so
+    routing the site's main CTA through a login wall was the actual bug
+    -- the pricing section's two CTAs ("Get started free" / "Sign in to
+    upgrade") still correctly go to /login, since upgrading/signing up
+    is what those are for.
+
+  Deliberately does NOT \#extend("layouts/base") -- that layout's nav is
+  plain Tailwind utility classes and only makes sense once someone is
+  inside the signed-in app shell; this page is the one screen in the
+  codebase actually built from the design canvas's own nav/hero/section
+  components, and nesting the two would fight visually. Every other page
+  keeps extending layouts/base -- see MILESTONES.md's incremental-design-
+  system-rollout note.
+
+  Every icon below is inlined as its own <svg><path.../></svg> rather than
+  a shared <symbol>+<use href="\#i-name"> sprite (the canvas's own
+  approach) -- a <use href="\#..."> puts a bare "\#identifier" in an
+  attribute value, which is exactly the LeafKit misparse class already
+  hit once in this codebase (partials/event-fragment.leaf, M4:
+  hx-target="\#event-fragment"). Inlining sidesteps the whole class of bug
+  instead of relying on remembering to escape it.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ExpatEvents — Helping expats get together</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="/css/home.css">
+</head>
+<body>
+<div class="page">
+
+  <nav class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="/"><img src="/design/logo.png" alt=""><span>ExpatEvents</span></a>
+      <div class="nav-links">
+        <a class="nav-link" href="/events">Events</a>
+        <a class="nav-link" href="/groups">Groups</a>
+        <a class="nav-link" href="\#pricing">Pricing</a>
+      </div>
+      <div class="nav-actions">
+        <a class="btn btn-ghost" href="/login">Log in</a>
+      </div>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-inner">
+      <div>
+        <span class="hero-eyebrow"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px"><circle cx="12" cy="12" r="8.5"/><ellipse cx="12" cy="12" rx="3.6" ry="8.5"/><line x1="3.7" y1="9.5" x2="20.3" y2="9.5"/><line x1="3.7" y1="14.5" x2="20.3" y2="14.5"/></svg> Built for expats, everywhere</span>
+        <h1>Welcome to<br/>ExpatEvents</h1>
+        <p class="lede">Host and find events in your local area &mdash; or the place you're visiting next. We help expats build a real community in a new country.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-solid-light" href="/events" style="padding:14px 26px;font-size:15.5px;">Get Started <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/></svg></a>
+          <span class="hero-scroll">Scroll down to learn more ↓</span>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <img class="hv-1" src="/design/categories/travel.jpg" alt="">
+        <img class="hv-2" src="/design/categories/culture.jpg" alt="">
+        <div class="hv-badge">
+          <span class="dot"></span>
+          <div><b>#(activeEventCount) events on ExpatEvents</b><span>Reflects live event data</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head" style="margin-bottom:0;">
+        <span class="eyebrow">Why ExpatEvents</span>
+        <h2>A community built for people starting over</h2>
+      </div>
+      <div class="values">
+        <div class="card value-card">
+          <div class="value-icon"><svg class="icon" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2"/><path d="M2.8 20c0-3.4 2.8-5.7 6.2-5.7s6.2 2.3 6.2 5.7"/><circle cx="17.2" cy="9.2" r="2.4"/><path d="M21.2 20c0-2.6-1.9-4.6-4.4-5.3"/></svg></div>
+          <h3>Helping expats get together</h3>
+          <p>We provide a way to host and find events in your local area or a place you're visiting. Our goal is to help expats build and foster community in their new country.</p>
+        </div>
+        <div class="card value-card">
+          <div class="value-icon"><svg class="icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></div>
+          <h3>Host your event with us</h3>
+          <p>We're focused on serving the expat community. When you host with us, you reach other expats only &mdash; no competing with generic events not meant for you.</p>
+        </div>
+        <div class="card value-card">
+          <div class="value-icon"><svg class="icon" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><line x1="15.5" y1="15.5" x2="20.5" y2="20.5"/></svg></div>
+          <h3>Find an event with other expats</h3>
+          <p>Moving abroad is tough &mdash; new language, no support network, an unfamiliar system. Find events near you and make new friends in your new home.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section pricing-wrap" id="pricing">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Pricing</span>
+        <h2>Simple plans, no surprises</h2>
+        <p>Start free. Upgrade any time to host without limits.</p>
+      </div>
+      <div class="pricing-grid">
+        <div class="card price-card">
+          <div class="price-tier">Free</div>
+          <div class="price-amount"><b>$0</b><span>forever</span></div>
+          <div class="price-alt">&nbsp;</div>
+          <ul class="price-list">
+            <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Host up to 5 active events</li>
+            <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Up to 5 attendees per hosted event</li>
+            <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Public events only</li>
+            <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Join any public event, or private events you're invited to</li>
+            <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Past &amp; cancelled events removed after 30 days</li>
+          </ul>
+          <a class="btn btn-outline btn-block" href="/login">Get started free</a>
+        </div>
+        <div class="card price-card featured">
+          <span class="price-ribbon">Most popular</span>
+          <div class="price-tier">Premium</div>
+          <div class="price-amount"><b>$10</b><span>/ month *</span></div>
+          <div class="price-alt">or $100 / year *</div>
+          <ul class="price-list">
+            <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Unlimited active events</li>
+            <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Unlimited attendees per event **</li>
+            <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Host public or private events</li>
+            <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Remove attendees from any hosted event</li>
+            <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Create a group to host events</li>
+            <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Create recurring events</li>
+          </ul>
+          <div class="price-note">
+            <p>* billed in your local currency at the exchange rate on the day of purchase</p>
+            <p>** attendees limited to 100 by default</p>
+          </div>
+          <a class="btn btn-accent btn-block" href="/login" style="margin-top:20px;">Sign in to upgrade</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Groups</span>
+        <h2>Together we excel</h2>
+        <p>Whether it's a loose circle of friends or a formal group with membership and coordinated activities &mdash; we want to help you run it.</p>
+      </div>
+      <div class="groups-grid">
+        <div>
+          <div class="groups-steps">
+            <div class="gs-row">
+              <div class="gs-num">1</div>
+              <div>
+                <h3>Creating and maintaining a group</h3>
+                <p>Any Premium member can create one group per membership, and add up to five additional members as group moderators. A group must always be owned by a Premium member; ownership can be transferred by contacting support.</p>
+              </div>
+            </div>
+            <div class="gs-row">
+              <div class="gs-num">2</div>
+              <div>
+                <h3>Benefits of running events as a group</h3>
+                <p>Here's what your group unlocks &mdash; included with any Premium membership.</p>
+                <ul class="gs-benefits">
+                  <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Moderators can create &amp; manage events in the group's name</li>
+                  <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Group events are shown as hosted by the group</li>
+                  <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Groups are public by default</li>
+                  <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Can restrict membership to invite&#8209;only</li>
+                  <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Can hold private events visible only to members</li>
+                  <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> All the benefits of Premium</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card group-preview">
+          <div class="gp-cover"></div>
+          <div class="gp-body">
+            <img class="gp-avatar" src="/design/categories/culture.jpg" alt="">
+            <h4>Madrid Hikers Club</h4>
+            <div class="gp-meta"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><ellipse cx="12" cy="12" rx="3.6" ry="8.5"/><line x1="3.7" y1="9.5" x2="20.3" y2="9.5"/><line x1="3.7" y1="14.5" x2="20.3" y2="14.5"/></svg> Public group &middot; <svg class="icon" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2"/><path d="M2.8 20c0-3.4 2.8-5.7 6.2-5.7s6.2 2.3 6.2 5.7"/><circle cx="17.2" cy="9.2" r="2.4"/><path d="M21.2 20c0-2.6-1.9-4.6-4.4-5.3"/></svg> 184 members</div>
+            <div class="gp-mods">
+              <img src="/design/avatar-placeholder.png" alt="">
+              <img src="/design/avatar-placeholder.png" alt="">
+              <img src="/design/avatar-placeholder.png" alt="">
+              <span>3 moderators</span>
+            </div>
+            <div class="gp-event"><svg class="icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg> Hosting &ldquo;Sunset ridge walk&rdquo; &middot; Sat, 6:30 PM</div>
+            <p class="gp-sample-tag">Sample group shown for illustration</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="foot-grid">
+        <div>
+          <h4>About us</h4>
+          <!-- Not yet built in this MVP -- /feedback, /privacy, and
+               /terms are all now explicitly scoped to M9 (widened at the
+               user's request after the M7 checkpoint; see
+               docs/expatevents-mvp-plan.md's M9 section). Rendered as
+               inert text rather than a link to nowhere until M9 ships;
+               swap each span for a real <a> then. -->
+          <span class="foot-placeholder">Feedback</span>
+          <span class="foot-placeholder">Privacy policy</span>
+          <span class="foot-placeholder">Terms and conditions</span>
+        </div>
+        <div>
+          <h4>Services</h4>
+          <a href="/events">Events</a>
+          <a href="/groups">Groups</a>
+        </div>
+        <div>
+          <h4>ExpatEvents, a Bald Traveler site</h4>
+          <p class="foot-tagline">Building an expat community by helping you socialize with other expats.</p>
+        </div>
+      </div>
+      <div class="foot-bottom">&copy; ExpatEvents. All rights reserved.</div>
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>
