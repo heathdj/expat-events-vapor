@@ -1,0 +1,48 @@
+<!--
+  The part of the profile page that changes on follow/unfollow (mirrors
+  partials/group-fragment.leaf's role for M6's join/leave/promote/demote
+  -- see that file's own doc comment for the pattern this follows).
+  Rendered two ways with the exact same flat context (profile, isSignedIn,
+  isOwnProfile, canFollow):
+    - inline, via \#extend from pages/profile.leaf, sharing the page's own
+      full context (the same proven pattern event-detail.leaf/
+      event-fragment.leaf and group-detail.leaf/group-fragment.leaf
+      already use);
+    - standalone, by ProfileWebController's follow/unfollow handlers when
+      the request came from htmx (HX-Request header) -- that response
+      replaces just this fragment, via hx-target="\#profile-fragment"
+      hx-swap="outerHTML" below.
+
+  Unfollow gets hx-confirm (architecture doc §15's destructive-action
+  convention -- it revokes something the person already has); follow
+  doesn't, matching "join"/"promote"'s purely-additive treatment.
+
+  Restyled to the shared design-system button classes (.btn-accent for
+  Follow, .btn-outline for Following/Unfollow) at the user's request --
+  every hx-*/id/form/action attribute below is byte-for-byte the same as
+  before this restyle, only the button classes changed, so
+  testFollowUnfollowHtmxFragmentEndToEndAndConfirmDialogOnUnfollowOnly
+  needed no changes.
+-->
+<div id="profile-fragment" style="margin-top:16px;">
+    #if(isOwnProfile):
+    <span style="font-size:13.5px;color:var(--ink-faint);">This is your own profile.</span>
+    #endif
+    #if(canFollow):
+        #if(profile.isFollowedByRequester):
+        <form hx-post="/profile/#(profile.id)/unfollow" hx-target="\#profile-fragment" hx-swap="outerHTML"
+              hx-confirm="Unfollow #(profile.displayName)?"
+              method="post" action="/profile/#(profile.id)/unfollow">
+            <button type="submit" class="btn btn-outline btn-sm">Following</button>
+        </form>
+        #else:
+        <form hx-post="/profile/#(profile.id)/follow" hx-target="\#profile-fragment" hx-swap="outerHTML"
+              method="post" action="/profile/#(profile.id)/follow">
+            <button type="submit" class="btn btn-accent btn-sm">Follow</button>
+        </form>
+        #endif
+    #endif
+    #if(!isSignedIn):
+    <a href="/login" class="btn btn-accent btn-sm">Sign in to follow</a>
+    #endif
+</div>

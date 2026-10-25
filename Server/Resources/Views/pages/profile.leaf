@@ -1,0 +1,75 @@
+#extend("layouts/base"):
+#export("body"):
+<!--
+  M7. Three tabs (Hosted events / Followers / Following), same
+  client-side Alpine x-data/x-show switcher as group-detail.leaf's three
+  tabs -- no server round trip, everything's already in this one render.
+  The follow/unfollow control itself lives in
+  \#extend("partials/profile-fragment") below, not here directly, since
+  it needs to re-render standalone over htmx; see that partial's own doc
+  comment.
+
+  Restyled from plain Tailwind to the shared design-system tokens
+  (Public/css/design-tokens.css) at the user's request, after they
+  noticed the home page used the design system but this one didn't.
+  Profile isn't one of the canvas's six artboards (docs/design-system.md's
+  "six screens" table), and tabs specifically aren't a documented canvas
+  component at all -- see design-tokens.css's own comment on .ds-tabs for
+  what's verbatim-canvas versus extrapolated here. The Alpine tab-switch
+  logic itself (x-data, @click, x-show) is unchanged from before this
+  restyle -- only which classes render, and :class now toggles
+  "ds-tab-active" instead of Tailwind's border/text utility classes.
+-->
+<div class="card" style="padding:24px;" x-data="{ tab: 'events' }">
+    <div style="display:flex;align-items:center;gap:16px;">
+        #if(profile.photoURL):
+        <img src="#(profile.photoURL)" alt="" class="ds-avatar ds-avatar-lg">
+        #else:
+        <div class="ds-avatar ds-avatar-lg ds-avatar-placeholder"></div>
+        #endif
+        <div>
+            <h1 class="ds-font-display" style="font-size:22px;">#(profile.displayName)</h1>
+            <p style="font-size:13.5px;color:var(--ink-faint);margin-top:4px;">#(profile.followerCount) followers · #(profile.followingCount) following</p>
+        </div>
+    </div>
+
+    #extend("partials/profile-fragment")
+
+    <div class="ds-tabs" style="margin-top:24px;">
+        <button type="button" class="ds-tab" @click="tab = 'events'" :class="tab === 'events' ? 'ds-tab-active' : ''">Hosted events</button>
+        <button type="button" class="ds-tab" @click="tab = 'followers'" :class="tab === 'followers' ? 'ds-tab-active' : ''">Followers</button>
+        <button type="button" class="ds-tab" @click="tab = 'following'" :class="tab === 'following' ? 'ds-tab-active' : ''">Following</button>
+    </div>
+
+    <div x-show="tab === 'events'" style="display:flex;flex-direction:column;gap:10px;">
+        #for(event in profile.hostedEvents):
+        <a href="/events/#(event.id)" class="card" style="display:block;padding:12px 14px;">
+            <h3 style="font-size:14px;font-weight:600;color:var(--ink);">#(event.title)</h3>
+            <p style="font-size:12.5px;color:var(--ink-faint);margin-top:4px;">#(event.cityAddress) — #(event.attendeeCount) attending</p>
+        </a>
+        #endfor
+        #if(count(profile.hostedEvents) == 0):
+        <p class="ds-empty-state">No hosted events yet.</p>
+        #endif
+    </div>
+
+    <div x-show="tab === 'followers'" style="display:flex;flex-direction:column;">
+        #for(entry in followers):
+        <a href="/profile/#(entry.userID)" style="padding:10px 4px;font-size:14px;color:var(--ink);border-bottom:1px solid var(--line);">#(entry.displayName)</a>
+        #endfor
+        #if(count(followers) == 0):
+        <p class="ds-empty-state">No followers yet.</p>
+        #endif
+    </div>
+
+    <div x-show="tab === 'following'" style="display:flex;flex-direction:column;">
+        #for(entry in following):
+        <a href="/profile/#(entry.userID)" style="padding:10px 4px;font-size:14px;color:var(--ink);border-bottom:1px solid var(--line);">#(entry.displayName)</a>
+        #endfor
+        #if(count(following) == 0):
+        <p class="ds-empty-state">Not following anyone yet.</p>
+        #endif
+    </div>
+</div>
+#endexport
+#endextend

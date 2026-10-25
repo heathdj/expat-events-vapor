@@ -6,7 +6,11 @@
         <span class="text-xs uppercase tracking-wide text-gray-500">#(event.category)</span>
     </div>
     <p class="text-sm text-gray-500 mt-1">#(event.venueAddress)</p>
+    #if(event.hostUserID):
+    <p class="text-sm text-gray-500">Hosted by <a href="/profile/#(event.hostUserID)" class="hover:underline">#(event.hostDisplayName)</a></p>
+    #else:
     <p class="text-sm text-gray-500">Hosted by #(event.hostDisplayName)</p>
+    #endif
     <p class="mt-4 text-gray-700">#(event.description)</p>
 
     #extend("partials/event-fragment")
