@@ -41,6 +41,13 @@ struct ChatService {
     /// rather than silently allowed and left for the client to render
     /// however it likes.
     func send(_ request: SendChatMessageRequest, eventID: UUID, userID: UUID) async throws -> ChatMessage {
+        // M9 independent review: a chat socket authenticates once, when it
+        // opens, then keeps the sender's ID. An account erased (or
+        // suspended) while its event page is still open must not keep
+        // posting -- so the sender is re-checked on every message.
+        guard let sender = try await User.find(userID, on: db), sender.erasedAt == nil, !sender.isSuspended else {
+            throw APIError(code: "account_unavailable", message: "This account can't send messages.")
+        }
         if let parentID = request.parentID {
             guard let parent = try await ChatMessage.find(parentID, on: db), parent.$event.id == eventID else {
                 throw APIError.notFound

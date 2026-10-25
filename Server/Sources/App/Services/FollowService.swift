@@ -23,7 +23,8 @@ struct FollowService {
         guard followerID != followingID else {
             throw APIError(code: "cannot_follow_self", message: "You can't follow yourself.")
         }
-        guard try await User.find(followingID, on: db) != nil else {
+        // An erased account's tombstone (M9) can't be followed.
+        guard let target = try await User.find(followingID, on: db), target.erasedAt == nil else {
             throw APIError.notFound
         }
         let alreadyFollowing = try await Follow.query(on: db)

@@ -40,10 +40,10 @@ struct ProfileWebController: RouteCollection {
     }
 
     func boot(routes: RoutesBuilder) throws {
-        let optionallyAuthenticated = routes.grouped(User.sessionAuthenticator())
+        let optionallyAuthenticated = routes.grouped(User.activeSessionAuthenticator())
         optionallyAuthenticated.get("profile", ":userID", use: detail)
 
-        let authenticated = routes.grouped(User.sessionAuthenticator(), User.guardMiddleware(), NotSuspendedMiddleware())
+        let authenticated = routes.grouped(User.activeSessionAuthenticator(), User.guardMiddleware(), NotSuspendedMiddleware())
         authenticated.post("profile", ":userID", "follow", use: follow)
         authenticated.post("profile", ":userID", "unfollow", use: unfollow)
     }
@@ -111,7 +111,9 @@ struct ProfileWebController: RouteCollection {
 
     private func userOrNotFound(_ req: Request) async throws -> User {
         guard let idString = req.parameters.get("userID"), let id = UUID(uuidString: idString),
-              let user = try await User.find(id, on: req.db)
+              let user = try await User.find(id, on: req.db),
+              // M9: an erased account has no public profile.
+              user.erasedAt == nil
         else {
             throw Abort(.notFound)
         }

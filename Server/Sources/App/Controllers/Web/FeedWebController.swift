@@ -30,7 +30,7 @@ struct FeedWebController: RouteCollection {
     }
 
     func boot(routes: RoutesBuilder) throws {
-        let authenticated = routes.grouped(User.sessionAuthenticator(), User.guardMiddleware(), NotSuspendedMiddleware())
+        let authenticated = routes.grouped(User.activeSessionAuthenticator(), User.guardMiddleware(), NotSuspendedMiddleware())
         authenticated.get("feed", use: index)
     }
 
