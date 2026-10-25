@@ -27,7 +27,7 @@
         #for(event in upcomingEvents):
         <a href="/events/#(event.id)" class="block border border-gray-200 rounded-md p-3 hover:border-gray-400">
             <h3 class="font-medium text-sm">#(event.title)</h3>
-            <p class="text-xs text-gray-500 mt-1">#(event.cityAddress) — #(event.attendeeCount) attending</p>
+            <p class="text-xs text-gray-500 mt-1">#eventDate(event.date, "short") · #(event.cityAddress) — #(event.attendeeCount) attending</p>
         </a>
         #endfor
         #if(count(upcomingEvents) == 0):

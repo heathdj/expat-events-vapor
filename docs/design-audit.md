@@ -2,6 +2,8 @@
 
 Audited 2026-10-25 against `main` at the PR #8 merge. Compares every screen against the design canvas's six artboards (`Main`, `Events`, `EventDetail`, `Groups`, `GroupEventForm`, `Account`, extracted directly from the canvas source, not from memory) and against the component patterns in `docs/design-system.md`. Design-visible gaps in behavior are included too, for example a form field the artboard shows but the website can't submit.
 
+**Update (event-basics PR, after this audit)**: the three behavior gaps found here are fixed. Event dates now show on the events list, event page, group page and profile; the create form works again (its date field was failing every submission) and has Host as, Public/Private and an attendee limit, with readable errors; and `/events` has "Load more events". The rows below are marked accordingly. Everything else in this audit is still open.
+
 Status key: ✅ built to the design · 🟡 partly built · ❌ not built (the page works but is still plain Tailwind, or the element is missing).
 
 ## Summary
@@ -13,7 +15,7 @@ Status key: ✅ built to the design · 🟡 partly built · ❌ not built (the p
 | Events (`/events`) | `Events.dc.html` | ❌ plain Tailwind; most of the artboard's features missing |
 | Event detail (`/events/:id`) | `EventDetail.dc.html` | ❌ plain Tailwind; works, but missing most of the layout |
 | Groups (`/groups`, `/groups/:slug`) | `Groups.dc.html` | ❌ plain Tailwind; different layout from the artboard |
-| Create event (`/events/new`) | `GroupEventForm.dc.html` | ❌ plain Tailwind; several fields can't be set from the website |
+| Create event (`/events/new`) | `GroupEventForm.dc.html` | ❌ plain Tailwind; works and has its key fields since the event-basics PR, but none of the artboard's layout |
 | Feed, Profile, Feedback, Privacy, Terms | no artboard | Styled with the design tokens (extrapolated) |
 | Sign in, group create form | no artboard | ❌ plain Tailwind |
 | App-wide nav (every page but Home) | all artboards | ❌ plain white Tailwind bar, not the design's nav |
@@ -54,18 +56,18 @@ Every section on the artboard is built (hero, value props, how-it-works, pricing
 | City and venue search inputs | ❌ no UI. Filtering works if you type it into the URL (`?city=…&venue=…`), M4 criterion #4 |
 | Category chips | ❌ no UI (same: works via `?category=`). The artboard's chips leave out **Film**, one of the six categories, so the design needs fixing too |
 | Mini calendar date picker | ❌ no UI (backend supports `?onOrAfterDate=`) |
-| Event card: category photo + badge, title, "Group event" tag, host avatar, date and place, description, attendee avatars, inline Join / Going button | 🟡 shows title, category text, city, host name and attendee count. **No date shown at all**, no photo, no description, no inline join |
-| "Load more events" | ❌ missing. The backend pages at 20 events, and nothing on the page links to the next page; the 21st event onward is only reachable by typing `?page=2` |
-| htmx filter and load-more endpoints (architecture §6: `POST /events/filter`, `GET /events?page=N`) | ❌ not built |
+| Event card: category photo + badge, title, "Group event" tag, host avatar, date and place, description, attendee avatars, inline Join / Going button | 🟡 shows title, category text, **date** (fixed), city, host name and attendee count; no photo, no description, no inline join |
+| "Load more events" | 🟡 **fixed** as a plain "Load more events" button (htmx, keeps the current filters); restyle pending |
+| htmx filter and load-more endpoints (architecture §6: `POST /events/filter`, `GET /events?page=N`) | 🟡 the load-more half is built (`GET /events?page=N` with `HX-Request` returns just the next cards); the filter endpoint isn't |
 
 ### Event detail: `EventDetail.dc.html` (❌)
 
 | Artboard element | Today |
 |---|---|
 | Breadcrumb ("Events › title") | ❌ |
-| Hero banner: category photo, "Hosted by a group" tag, title, date, place | ❌ plain heading. **The event's date and time aren't shown anywhere on the page** |
+| Hero banner: category photo, "Hosted by a group" tag, title, date, place | ❌ plain heading; the full date is now shown under it (fixed) |
 | Action bar: host avatar + name, Join / "Going ✓" toggle | 🟡 Join/Leave works over htmx but is plain; no avatar |
-| Info panel: description, full date, venue with "Show map" | 🟡 description and venue as plain text; **no map** (venue latitude/longitude are always 0, see the event form) |
+| Info panel: description, full date, venue with "Show map" | 🟡 description, venue and (since the event-basics PR) the full date, as plain text; **no map** (venue latitude/longitude are always 0, see the event form) |
 | Live chat card: "Connected" pulse, avatars, timestamps, your-messages-vs-others' bubbles, "Reply" link | 🟡 live chat works (M5) but is plain: no avatars, no timestamps, no bubbles, and **no way to reply from the UI** (replies work server-side; M5 scope trim) |
 | Sidebar: "N people going", attendees with avatars, Host and You tags | 🟡 a plain attendee list with a count |
 
@@ -90,16 +92,16 @@ This is where the most behavior is missing, not just styling.
 
 | Artboard element | Today |
 |---|---|
-| "Host as" chips: Myself or one of your groups | ❌ **The website can't create a group-hosted event.** The web form always hosts as yourself; group events can only be made through the API (the server-side permission checks exist, M6) |
+| "Host as" chips: Myself or one of your groups | 🟡 **fixed** as a plain "Host as" dropdown (Myself plus every group you own or moderate); the design's chips are the restyle |
 | Category picker with photos | 🟡 a plain dropdown |
 | Date & time, venue | 🟡 plain inputs; no city/venue autocomplete, so latitude/longitude are saved as 0 (tracked since M4) |
-| Visibility: Public / Private cards | ❌ **Not on the form**, so every web-created event is public. Premium users can't make a private event from the website, even though the server allows it |
-| "Limit attendees" switch + stepper | ❌ not on the form, and the create request has no attendee-limit field at all (the model does) |
+| Visibility: Public / Private cards | 🟡 **fixed** as plain Public/Private radio buttons; the design's cards are the restyle |
+| "Limit attendees" switch + stepper | 🟡 **fixed** as a plain number field; the create request now carries `attendeeLimit`, capped by plan (5 for a Free host, 100 otherwise). The switch + stepper is the restyle |
 | "Recurring event" switch | ❌ not on the form (in scope only as a flag) |
 | "Save as draft" | ❌ no drafts in the data model |
 | Live preview card | ❌ |
 | Edit an existing event (`/events/:id/edit`, architecture §6) | ❌ not built |
-| Friendly error when a plan limit blocks creation | ❌ the form re-renders with no message (tracked since M4) |
+| Friendly error when a plan limit blocks creation | 🟡 **fixed** (plain styling): the form re-renders with the reason and everything you typed |
 
 ## 2. Design-system patterns across the app (`docs/design-system.md`)
 

@@ -45,7 +45,7 @@
         #for(event in profile.hostedEvents):
         <a href="/events/#(event.id)" class="card" style="display:block;padding:12px 14px;">
             <h3 style="font-size:14px;font-weight:600;color:var(--ink);">#(event.title)</h3>
-            <p style="font-size:12.5px;color:var(--ink-faint);margin-top:4px;">#(event.cityAddress) — #(event.attendeeCount) attending</p>
+            <p style="font-size:12.5px;color:var(--ink-faint);margin-top:4px;">#eventDate(event.date, "short") · #(event.cityAddress) — #(event.attendeeCount) attending</p>
         </a>
         #endfor
         #if(count(profile.hostedEvents) == 0):

@@ -1,46 +1,116 @@
 #extend("layouts/base"):
 #export("body"):
+<!--
+  Create an event (M4, fixed and extended after the post-M9 design audit).
+  Still plain Tailwind: the design canvas's GroupEventForm artboard
+  restyle is its own later PR. What this version adds is behavior the
+  artboard shows but the old form couldn't submit: "Host as" (yourself or
+  a group you own or moderate), Public/Private, and an attendee limit,
+  plus a readable error message and your typed values kept when the
+  server rejects something (a Free plan limit, a bad date, ...).
+
+  Every selected/checked state is a precomputed Bool from
+  EventWebController.renderForm -- no Leaf-side equality comparisons.
+-->
 <div class="max-w-lg mx-auto bg-white border border-gray-200 rounded-lg p-6">
     <h1 class="text-xl font-semibold mb-4">Host an event</h1>
+    #if(errorMessage):
+    <div class="mb-4 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700" role="alert">#(errorMessage)</div>
+    #endif
     <form method="post" action="/events" class="space-y-4">
+        #if(hasGroupHostOptions):
         <div>
-            <label class="block text-sm font-medium mb-1">Title</label>
-            <input name="title" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+            <label class="block text-sm font-medium mb-1" for="hostGroupID">Host as</label>
+            <select id="hostGroupID" name="hostGroupID" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                #for(option in hostOptions):
+                #if(option.isSelected):
+                <option value="#(option.value)" selected>#(option.label)</option>
+                #else:
+                <option value="#(option.value)">#(option.label)</option>
+                #endif
+                #endfor
+            </select>
+            <p class="text-xs text-gray-500 mt-1">Group events show up under the group's name.</p>
+        </div>
+        #endif
+        <div>
+            <label class="block text-sm font-medium mb-1" for="title">Title</label>
+            <input id="title" name="title" value="#(eventTitle)" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
         </div>
         <div>
-            <label class="block text-sm font-medium mb-1">Description</label>
-            <textarea name="description" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"></textarea>
+            <label class="block text-sm font-medium mb-1" for="description">Description</label>
+            <textarea id="description" name="description" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">#(eventDescription)</textarea>
         </div>
         <div>
-            <label class="block text-sm font-medium mb-1">Category</label>
-            <select name="category" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
-                #for(category in categories):
-                <option value="#(category)">#(category)</option>
+            <label class="block text-sm font-medium mb-1" for="category">Category</label>
+            <select id="category" name="category" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                #for(option in categories):
+                #if(option.isSelected):
+                <option value="#(option.value)" selected>#(option.label)</option>
+                #else:
+                <option value="#(option.value)">#(option.label)</option>
+                #endif
                 #endfor
             </select>
         </div>
         <div>
-            <label class="block text-sm font-medium mb-1">Date</label>
-            <input type="datetime-local" name="date" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+            <label class="block text-sm font-medium mb-1" for="date">Date &amp; time</label>
+            <input id="date" type="datetime-local" name="date" value="#(date)" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+            <p class="text-xs text-gray-500 mt-1">Local time at the venue.</p>
         </div>
         <div>
-            <label class="block text-sm font-medium mb-1">City</label>
-            <input name="cityAddress" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+            <label class="block text-sm font-medium mb-1" for="cityAddress">City</label>
+            <input id="cityAddress" name="cityAddress" value="#(cityAddress)" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
             <input type="hidden" name="cityLat" value="0">
             <input type="hidden" name="cityLng" value="0">
         </div>
         <div>
-            <label class="block text-sm font-medium mb-1">Venue</label>
-            <input name="venueAddress" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+            <label class="block text-sm font-medium mb-1" for="venueAddress">Venue</label>
+            <input id="venueAddress" name="venueAddress" value="#(venueAddress)" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
             <input type="hidden" name="venueLat" value="0">
             <input type="hidden" name="venueLng" value="0">
         </div>
         <!--
-          NOTE: city/venue lat-lng are placeholder hidden fields here.
+          NOTE: city/venue lat-lng are still placeholder hidden fields.
           Architecture §15 calls for a Google Places-style autocomplete
-          widget (matching the legacy app's MyPlaceInput.jsx) that fills
-          these in — not yet wired up in this scaffold.
+          (matching the legacy app's MyPlaceInput.jsx) to fill them in.
         -->
+        <fieldset>
+            <legend class="block text-sm font-medium mb-1">Visibility</legend>
+            <label class="flex items-start gap-2 text-sm mb-1">
+                #if(isPrivate):
+                <input type="radio" name="visibility" value="public" class="mt-1">
+                #else:
+                <input type="radio" name="visibility" value="public" checked class="mt-1">
+                #endif
+                <span><b>Public</b> — anyone can find and join.</span>
+            </label>
+            <label class="flex items-start gap-2 text-sm">
+                #if(isPrivate):
+                <input type="radio" name="visibility" value="private" checked class="mt-1">
+                #else:
+                <input type="radio" name="visibility" value="private" class="mt-1">
+                #endif
+                #if(isPremium):
+                <span><b>Private</b> — only the hosting group's members can see and join.</span>
+                #else:
+                <span><b>Private</b> — only the hosting group's members can see and join. Requires Premium, or hosting as a group.</span>
+                #endif
+            </label>
+        </fieldset>
+        <div>
+            <label class="block text-sm font-medium mb-1" for="attendeeLimit">Attendee limit <span class="font-normal text-gray-500">(optional)</span></label>
+            <input id="attendeeLimit" type="number" name="attendeeLimit" value="#(attendeeLimit)" min="1" max="100" class="w-32 border border-gray-300 rounded-md px-3 py-2 text-sm">
+            #if(isPremium):
+            <p class="text-xs text-gray-500 mt-1">Leave empty for the default of 100.</p>
+            #else:
+            #if(hasGroupHostOptions):
+            <p class="text-xs text-gray-500 mt-1">Leave empty for your plan's limit of 5 (up to 100 when hosting as a group).</p>
+            #else:
+            <p class="text-xs text-gray-500 mt-1">Leave empty for your plan's limit of 5.</p>
+            #endif
+            #endif
+        </div>
         <button type="submit" class="bg-gray-900 text-white px-4 py-2 rounded-md text-sm hover:bg-gray-700">Create event</button>
     </form>
 </div>

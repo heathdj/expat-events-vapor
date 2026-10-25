@@ -44,7 +44,27 @@ struct EventService {
 
     // MARK: - Filtering
 
+    static let pageSize = 20
+    /// Highest page number honored. Clamping keeps `(page - 1) * pageSize`
+    /// from overflowing: `?page=9223372036854775807` used to crash the
+    /// whole server process (found by the event-basics review; the
+    /// arithmetic predates that PR).
+    static let maxPage = 10_000
+
+    /// The page number a filter actually asks for, clamped to 1...maxPage.
+    static func clampedPage(_ filter: EventFilterQuery) -> Int {
+        min(max(filter.page ?? 1, 1), maxPage)
+    }
+
     func filteredEvents(_ filter: EventFilterQuery, requesterID: UUID?) async throws -> [Event] {
+        try await filteredEventsPage(filter, requesterID: requesterID).events
+    }
+
+    /// One page of `filteredEvents`, plus whether another page exists --
+    /// what `/events`' "Load more" needs. Fetches one row past the page
+    /// to find out, before the visibility filter below, so a page can
+    /// hold fewer than `pageSize` visible events and still report more.
+    func filteredEventsPage(_ filter: EventFilterQuery, requesterID: UUID?) async throws -> (events: [Event], hasMore: Bool) {
         var query = Event.query(on: db)
             .filter(\.$isCancelled == false)
             .with(\.$hostUser)
@@ -69,11 +89,16 @@ struct EventService {
             query = query.filter(\.$date >= onOrAfterDate)
         }
 
-        let pageSize = 20
-        let page = max(filter.page ?? 1, 1)
-        query = query.sort(\.$date, .ascending).offset((page - 1) * pageSize).limit(pageSize)
+        let pageSize = Self.pageSize
+        let page = Self.clampedPage(filter)
+        // `id` breaks ties between events at the same time, so separate
+        // page queries agree on one order and no event repeats or vanishes.
+        query = query.sort(\.$date, .ascending).sort(\.$id, .ascending)
+            .offset((page - 1) * pageSize).limit(pageSize + 1)
 
-        let events = try await query.all()
+        let fetched = try await query.all()
+        let hasMore = fetched.count > pageSize
+        let events = Array(fetched.prefix(pageSize))
 
         // Private group events are excluded from listings entirely for
         // non-members, rather than shown-then-blocked (M6 criterion #5).
@@ -83,7 +108,7 @@ struct EventService {
                 visible.append(event)
             }
         }
-        return visible
+        return (visible, hasMore)
     }
 
     // MARK: - Mutations
@@ -107,6 +132,9 @@ struct EventService {
         }
 
         try await limits.assertCanSetVisibility(request.visibility, hostUserID: hostGroupID == nil ? hostUserID : nil)
+        if let attendeeLimit = request.attendeeLimit {
+            try await limits.assertCanSetAttendeeLimit(attendeeLimit, hostUserID: hostGroupID == nil ? hostUserID : nil)
+        }
 
         let event = Event(
             title: request.title,
@@ -122,6 +150,7 @@ struct EventService {
             hostUserID: hostGroupID == nil ? hostUserID : nil,
             hostGroupID: hostGroupID,
             visibility: request.visibility,
+            attendeeLimit: request.attendeeLimit,
             isRecurring: request.isRecurring
         )
         try await event.save(on: db)

@@ -1,0 +1,27 @@
+<!--
+  Event cards plus the "Load more events" button. Rendered two ways with
+  the same flat context (events, nextPageURL): inline via \#extend from
+  pages/events.leaf, and standalone by EventWebController.dashboard for an
+  htmx "Load more" request. The button's wrapper is what gets replaced
+  (hx-target="\#load-more", hx-swap="outerHTML"), so the next page's cards
+  land where the button was, followed by a fresh button if there's yet
+  another page. Without JavaScript the same element is a plain link to
+  that page.
+-->
+#for(event in events):
+<a href="/events/#(event.id)" data-event-card class="block bg-white border border-gray-200 rounded-lg p-4 hover:border-gray-400">
+    <div class="flex items-center justify-between">
+        <h2 class="font-medium">#(event.title)</h2>
+        <span class="text-xs uppercase tracking-wide text-gray-500">#(event.category)</span>
+    </div>
+    <p class="text-sm text-gray-700 mt-1">#eventDate(event.date, "short")</p>
+    <p class="text-sm text-gray-500 mt-1">#(event.cityAddress) — hosted by #(event.hostDisplayName)</p>
+    <p class="text-sm text-gray-400 mt-1">#(event.attendeeCount) attending</p>
+</a>
+#endfor
+#if(nextPageURL):
+<div id="load-more" class="text-center pt-2">
+    <a href="#(nextPageURL)" hx-get="#(nextPageURL)" hx-target="\#load-more" hx-swap="outerHTML"
+       class="inline-block border border-gray-300 rounded-md px-4 py-2 text-sm hover:bg-gray-50">Load more events</a>
+</div>
+#endif

@@ -17,6 +17,10 @@ services:
       - "5433:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+      # Creates expatevents_test (what `swift test` uses, see .env.testing)
+      # on a fresh volume. Existing volumes need it created once by hand:
+      #   docker compose exec db createdb -U vapor_username expatevents_test
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
 
 volumes:
   db_data:

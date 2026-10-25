@@ -139,6 +139,10 @@ public struct CreateEventRequest: Codable, Sendable, Equatable {
     public let hostGroupID: UUID?
     public let visibility: EventVisibility
     public let isRecurring: Bool
+    /// nil = the plan default (5 for a Free host, 100 otherwise). When
+    /// set, must be at least 1 and no more than that same plan cap; the
+    /// server rejects anything else.
+    public let attendeeLimit: Int?
 
     public init(
         title: String,
@@ -153,7 +157,8 @@ public struct CreateEventRequest: Codable, Sendable, Equatable {
         venueLng: Double,
         hostGroupID: UUID? = nil,
         visibility: EventVisibility = .public,
-        isRecurring: Bool = false
+        isRecurring: Bool = false,
+        attendeeLimit: Int? = nil
     ) {
         self.title = title
         self.description = description
@@ -168,6 +173,7 @@ public struct CreateEventRequest: Codable, Sendable, Equatable {
         self.hostGroupID = hostGroupID
         self.visibility = visibility
         self.isRecurring = isRecurring
+        self.attendeeLimit = attendeeLimit
     }
 }
 
