@@ -51,6 +51,15 @@
     </script>
     #endif
 
+    <!-- M9 criterion #1: what a new account consents to is what's shown
+         here -- both versions come from LegalVersions, the same constants
+         AuthService records on the new User. -->
+    <p class="text-xs text-gray-500 mt-6">
+        By continuing, you agree to our
+        <a href="/terms" class="underline">Terms and Conditions</a> (version #(termsVersion))
+        and <a href="/privacy" class="underline">Privacy Policy</a> (version #(privacyPolicyVersion)).
+    </p>
+
     #if(!appleClientID && !googleClientID):
     <p class="text-sm text-amber-600">
         Sign-in isn't configured yet — set <code>APPLE_CLIENT_ID</code> and/or

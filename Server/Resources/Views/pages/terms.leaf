@@ -1,0 +1,36 @@
+#extend("layouts/base"):
+#export("body"):
+<!--
+  M9 (/terms). Placeholder body text by the user's decision -- see
+  LegalWebController's doc comment. The version stamp is real:
+  LegalVersions.terms, the same constant AuthService records as
+  User.termsVersion on every new account (criterion #7).
+-->
+<div class="ds-page-head">
+    <h1>Terms and Conditions</h1>
+    <p><span class="ds-version">Version #(version)</span></p>
+</div>
+
+<div class="card ds-prose">
+    <div class="ds-alert ds-alert-info">This page is a placeholder. The final Terms and Conditions are still being written.</div>
+
+    <h2>Using ExpatEvents</h2>
+    <p>Placeholder.</p>
+
+    <h2>Your account</h2>
+    <p>Placeholder.</p>
+
+    <h2>Subscriptions</h2>
+    <p>Placeholder.</p>
+
+    <h2>Content you post</h2>
+    <p>Placeholder.</p>
+
+    <h2>Ending your account</h2>
+    <p>Placeholder.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about these terms: <a href="mailto:support@expatevents.net">support@expatevents.net</a>.</p>
+</div>
+#endexport
+#endextend

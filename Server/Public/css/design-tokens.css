@@ -53,6 +53,8 @@
   --gold-soft: oklch(95% 0.03 70);
   --danger: oklch(58% 0.18 25);
   --danger-soft: oklch(95% 0.03 25);
+  --green: oklch(70% 0.17 145);
+  --green-soft: oklch(95% 0.03 145);
   --r-sm: 10px; --r-md: 16px; --r-lg: 22px;
   --shadow-sm: 0 1px 2px rgba(20,30,60,.07), 0 1px 1px rgba(20,30,60,.04);
   --shadow-md: 0 10px 30px -8px rgba(20,30,60,.18);
@@ -106,3 +108,84 @@
 .ds-feed-meta-link{font-size:13px;color:var(--accent);font-weight:600;}
 .ds-feed-meta-link:hover{color:var(--brand-1);}
 .ds-empty-state{color:var(--ink-faint);font-size:14px;padding:24px;text-align:center;}
+
+/* ===================================================================
+ * M9 additions
+ * =================================================================== */
+
+/* Alpine's x-cloak: hide until Alpine initializes (no flash of the
+   account page's hidden edit form). An attribute selector, not a bare
+   element one, so pages without x-cloak are untouched. */
+[x-cloak]{display:none !important;}
+
+/* Page header -- verbatim from the canvas's Account artboard (.page-head),
+   prefixed. Reused by the Account, Feedback, Privacy and Terms pages. */
+.ds-page-head{padding:8px 0 24px;}
+.ds-page-head h1{font-family:var(--font-display);font-size:28px;letter-spacing:-0.01em;color:var(--ink);}
+.ds-page-head p{color:var(--ink-soft);font-size:14px;margin-top:6px;}
+.ds-section-title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:14px;}
+
+/* Account page -- verbatim from Account.dc.html (profile card, plan pill,
+   plan cards), prefixed ds-account-. The artboard's payment-method row
+   and billing-history table aren't carried over: both are Stripe-backed
+   and M8 (billing) hasn't been built. The "Your data" card has no canvas
+   counterpart at all -- it reuses .card/.ds-section-title. */
+.ds-account-layout{display:grid;grid-template-columns:280px 1fr;gap:28px;padding-bottom:40px;align-items:start;}
+.ds-account-profile{padding:26px 22px;text-align:center;}
+.ds-account-profile img,.ds-account-profile .ds-avatar{width:76px;height:76px;margin:0 auto 14px;}
+.ds-account-profile h4{font-family:var(--font-display);font-size:16px;margin-bottom:4px;color:var(--ink);}
+.ds-account-profile .ds-account-email{font-size:13px;color:var(--ink-faint);margin-bottom:4px;word-break:break-all;}
+.ds-account-profile .ds-account-since{font-size:12px;color:var(--ink-faint);margin-bottom:18px;}
+.ds-plan-pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;padding:5px 13px;border-radius:999px;margin-bottom:18px;}
+.ds-plan-free{background:var(--surface-2);color:var(--ink-soft);}
+.ds-plan-premium{background:var(--gold-soft);color:oklch(42% 0.11 70);}
+.ds-account-block{margin-bottom:24px;}
+.ds-plans-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.ds-plan-card{padding:24px;position:relative;}
+.ds-plan-card.ds-current{border-color:var(--green);background:var(--green-soft);}
+.ds-plan-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;}
+.ds-plan-card h3{font-family:var(--font-display);font-size:17px;color:var(--ink);}
+.ds-current-tag{background:var(--green-soft);color:oklch(38% 0.12 145);font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;border:1px solid oklch(85% 0.06 145);}
+.ds-plan-price{display:flex;align-items:baseline;gap:6px;margin-bottom:16px;}
+.ds-plan-price b{font-size:30px;font-family:var(--font-display);color:var(--ink);}
+.ds-plan-price span{font-size:13px;color:var(--ink-faint);}
+.ds-plan-feats{list-style:none;margin:0 0 4px;padding:0;display:flex;flex-direction:column;gap:9px;}
+.ds-plan-feats li{font-size:13px;color:var(--ink-soft);display:flex;gap:8px;}
+.ds-plan-feats li .icon{width:14px;height:14px;color:var(--accent);margin-top:2px;}
+.ds-plan-note{font-size:12px;color:var(--ink-faint);margin-top:14px;}
+.ds-data-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;}
+.ds-data-row + .ds-data-row{border-top:1px solid var(--line);}
+.ds-data-row h4{font-size:14.5px;font-weight:600;color:var(--ink);}
+.ds-data-row p{font-size:13px;color:var(--ink-faint);margin-top:2px;}
+@media (max-width:920px){.ds-account-layout{grid-template-columns:1fr;}.ds-plans-grid{grid-template-columns:1fr;}}
+
+/* Forms -- docs/design-system.md's documented input pattern ("--r-sm
+   radius, 1.5px --line border, --surface-2 background, 2px --accent-soft
+   outline + --accent border on focus"); the canvas's own form CSS lives
+   in GroupEventForm.dc.html, this is that pattern as documented. */
+.ds-field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+.ds-label{font-size:13px;font-weight:600;color:var(--ink);}
+.ds-hint{font-size:12px;color:var(--ink-faint);}
+.ds-input,.ds-textarea{width:100%;font-family:var(--font-body);font-size:14.5px;color:var(--ink);background:var(--surface-2);border:1.5px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;}
+.ds-textarea{min-height:140px;resize:vertical;line-height:1.5;}
+.ds-input:focus,.ds-textarea:focus{outline:2px solid var(--accent-soft);border-color:var(--accent);}
+.ds-alert{border-radius:var(--r-sm);padding:12px 14px;font-size:14px;margin-bottom:16px;}
+.ds-alert-error{background:var(--danger-soft);color:oklch(42% 0.15 25);}
+.ds-alert-success{background:var(--green-soft);color:oklch(38% 0.12 145);}
+.ds-alert-info{background:var(--accent-soft);color:oklch(38% 0.09 195);}
+
+/* Destructive outline button -- NOT a canvas component. design-system.md
+   notes --danger is "Home screen only; not used elsewhere yet"; this is
+   its first use outside Home, for "Delete account", flagged here as an
+   extrapolation rather than presented as canvas output. */
+.btn-danger-outline{background:transparent;color:oklch(48% 0.17 25);border:1.5px solid oklch(85% 0.07 25);}
+.btn-danger-outline:hover{background:var(--danger-soft);}
+
+/* Long-form prose (Privacy, Terms) -- no canvas artboard covers these
+   pages; extrapolated from the tokens' type scale. */
+.ds-prose{padding:28px 32px;color:var(--ink-soft);font-size:15px;line-height:1.65;}
+.ds-prose h2{font-family:var(--font-display);font-size:19px;color:var(--ink);margin:26px 0 8px;}
+.ds-prose h2:first-child{margin-top:0;}
+.ds-prose p{margin:0 0 12px;}
+.ds-prose a{color:var(--accent);}
+.ds-version{display:inline-flex;gap:6px;font-size:12.5px;font-weight:600;color:var(--ink-faint);background:var(--surface-2);padding:4px 12px;border-radius:999px;}

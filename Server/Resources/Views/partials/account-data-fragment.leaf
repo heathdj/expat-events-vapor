@@ -1,0 +1,49 @@
+<!--
+  The "Your data" card on /account -- the part that changes when "Delete
+  account" is confirmed. Rendered two ways with the same flat context
+  (hasPendingDeletion, deletionRequestedOn): inline via \#extend from
+  pages/account.leaf, and standalone by AccountWebController.requestDeletion
+  for an htmx request, replacing this fragment via
+  hx-target="\#account-data-fragment" hx-swap="outerHTML".
+
+  "Delete account" gets hx-confirm and nothing else (architecture §15's
+  destructive-action convention -- never also an inline JS confirm() on
+  the form's submit handler, which shows the dialog twice; worded that way
+  so this comment can't trip the test asserting no such attribute exists,
+  the M6 false-positive). "Download my data" is a
+  plain form POST with no confirm: it's non-destructive, and it has to be
+  a normal navigation for the browser to treat the response as a file
+  download.
+-->
+<div id="account-data-fragment" class="card ds-account-block" style="padding:8px 26px;">
+    <div class="ds-section-title" style="margin:16px 0 0;">Your data</div>
+
+    <div class="ds-data-row">
+        <div>
+            <h4>Download my data</h4>
+            <p>Your profile, events, group memberships and chat messages, as a JSON file.</p>
+        </div>
+        <form method="post" action="/account/export">
+            <button type="submit" class="btn btn-outline btn-sm">Download</button>
+        </form>
+    </div>
+
+    <div class="ds-data-row">
+        #if(hasPendingDeletion):
+        <div>
+            <h4>Deletion requested</h4>
+            <p>You asked us to delete your account on #(deletionRequestedOn). It will be erased once the request is processed; until then you can keep using it.</p>
+        </div>
+        #else:
+        <div>
+            <h4>Delete account</h4>
+            <p>Erases your profile and sign-in methods. Your chat messages stay, shown as "Deleted user".</p>
+        </div>
+        <form hx-post="/account/delete" hx-target="\#account-data-fragment" hx-swap="outerHTML"
+              hx-confirm="Delete your ExpatEvents account? This can't be undone once it's processed."
+              method="post" action="/account/delete">
+            <button type="submit" class="btn btn-danger-outline btn-sm">Delete account</button>
+        </form>
+        #endif
+    </div>
+</div>

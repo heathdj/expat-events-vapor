@@ -1,0 +1,101 @@
+#extend("layouts/base"):
+#export("body"):
+<!--
+  M9 (/account). Styled from the design canvas's Account & billing
+  artboard (Account.dc.html) via Public/css/design-tokens.css's
+  ds-account-* rules -- profile card, plan pill and the two plan cards are
+  that artboard's components. Left out on purpose: the monthly/yearly
+  toggle, Upgrade/Cancel buttons, payment method row and billing history
+  table, all Stripe-backed and waiting on M8. The "Your data" card has no
+  canvas counterpart (see design-tokens.css).
+
+  Every conditional below is a plain Bool/optional precomputed in
+  AccountWebController -- no Leaf-side equality comparisons.
+-->
+<div class="ds-page-head">
+    <h1>Account</h1>
+    <p>Your profile, plan, and data.</p>
+</div>
+
+<div class="ds-account-layout">
+    <div class="card ds-account-profile" x-data="{ editing: #(startEditing) }">
+        #if(photoURL):
+        <img src="#(photoURL)" alt="" class="ds-avatar">
+        #else:
+        <img src="/design/avatar-placeholder.png" alt="" class="ds-avatar">
+        #endif
+        <h4>#(displayName)</h4>
+        <div class="ds-account-email">#(email)</div>
+        <div class="ds-account-since">Member since #(memberSince)</div>
+        #if(isPremium):
+        <div class="ds-plan-pill ds-plan-premium">#(planLabel)</div>
+        #else:
+        <div class="ds-plan-pill ds-plan-free">#(planLabel)</div>
+        #endif
+
+        <button type="button" class="btn btn-outline" style="width:100%;" x-show="!editing" @click="editing = true">Edit profile</button>
+
+        <form method="post" action="/account/profile" x-show="editing" x-cloak style="text-align:left;">
+            #if(profileError):
+            <div class="ds-alert ds-alert-error">#(profileError)</div>
+            #endif
+            <div class="ds-field">
+                <label class="ds-label" for="displayName">Display name</label>
+                <input class="ds-input" id="displayName" name="displayName" value="#(displayName)" maxlength="80" required>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <button type="submit" class="btn btn-accent btn-sm">Save</button>
+                <button type="button" class="btn btn-outline btn-sm" @click="editing = false">Cancel</button>
+            </div>
+        </form>
+    </div>
+
+    <div>
+        <div class="card ds-account-block" style="padding:24px 26px;">
+            <div class="ds-section-title">Your plan</div>
+            <div class="ds-plans-grid">
+                #if(isPremium):
+                <div class="card ds-plan-card">
+                #else:
+                <div class="card ds-plan-card ds-current">
+                #endif
+                    <div class="ds-plan-card-top">
+                        <h3>Free</h3>
+                        #if(!isPremium):
+                        <span class="ds-current-tag">Current plan</span>
+                        #endif
+                    </div>
+                    <div class="ds-plan-price"><b>$0</b><span>forever</span></div>
+                    <ul class="ds-plan-feats">
+                        <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Host up to 5 active events</li>
+                        <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> 5 attendees per event</li>
+                        <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Public events only</li>
+                    </ul>
+                </div>
+                #if(isPremium):
+                <div class="card ds-plan-card ds-current">
+                #else:
+                <div class="card ds-plan-card">
+                #endif
+                    <div class="ds-plan-card-top">
+                        <h3>Premium</h3>
+                        #if(isPremium):
+                        <span class="ds-current-tag">Current plan</span>
+                        #endif
+                    </div>
+                    <div class="ds-plan-price"><b>$10</b><span>/ month, or $100 / year</span></div>
+                    <ul class="ds-plan-feats">
+                        <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Unlimited events &amp; attendees**</li>
+                        <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Create a group to host events</li>
+                        <li><svg class="icon" viewBox="0 0 24 24"><polyline points="5 12.5 9.5 17 19 6.5"/></svg> Recurring &amp; private events</li>
+                    </ul>
+                </div>
+            </div>
+            <p class="ds-plan-note">Changing plans isn't available yet. **100 attendees per event by default.</p>
+        </div>
+
+        #extend("partials/account-data-fragment")
+    </div>
+</div>
+#endexport
+#endextend

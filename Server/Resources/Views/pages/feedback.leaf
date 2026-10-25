@@ -1,0 +1,41 @@
+#extend("layouts/base"):
+#export("body"):
+<!--
+  M9 (/feedback). Same three fields as the legacy app's feedback form
+  (name, email, message), prefilled from the account when signed in.
+  Works signed out too (criterion #8). Uses design-tokens.css's form
+  pattern (docs/design-system.md's documented inputs).
+-->
+<div style="max-width:640px;margin:0 auto;">
+    <div class="ds-page-head">
+        <h1>Feedback</h1>
+        <p>Tell us what's working, what isn't, or what you'd like to see next.</p>
+    </div>
+
+    <div class="card" style="padding:26px;">
+        #if(sent):
+        <div class="ds-alert ds-alert-success">Thanks for your feedback! We read every message.</div>
+        #endif
+        #if(errorMessage):
+        <div class="ds-alert ds-alert-error">#(errorMessage)</div>
+        #endif
+
+        <form method="post" action="/feedback">
+            <div class="ds-field">
+                <label class="ds-label" for="name">Name <span class="ds-hint">(optional)</span></label>
+                <input class="ds-input" id="name" name="name" value="#(name)" maxlength="120">
+            </div>
+            <div class="ds-field">
+                <label class="ds-label" for="email">Email <span class="ds-hint">(optional, if you'd like a reply)</span></label>
+                <input class="ds-input" id="email" name="email" type="email" value="#(email)" maxlength="254">
+            </div>
+            <div class="ds-field">
+                <label class="ds-label" for="message">Your feedback</label>
+                <textarea class="ds-textarea" id="message" name="message" maxlength="5000" required>#(message)</textarea>
+            </div>
+            <button type="submit" class="btn btn-accent">Send feedback</button>
+        </form>
+    </div>
+</div>
+#endexport
+#endextend

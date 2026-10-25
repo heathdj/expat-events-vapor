@@ -221,15 +221,11 @@
       <div class="foot-grid">
         <div>
           <h4>About us</h4>
-          <!-- Not yet built in this MVP -- /feedback, /privacy, and
-               /terms are all now explicitly scoped to M9 (widened at the
-               user's request after the M7 checkpoint; see
-               docs/expatevents-mvp-plan.md's M9 section). Rendered as
-               inert text rather than a link to nowhere until M9 ships;
-               swap each span for a real <a> then. -->
-          <span class="foot-placeholder">Feedback</span>
-          <span class="foot-placeholder">Privacy policy</span>
-          <span class="foot-placeholder">Terms and conditions</span>
+          <!-- Real links as of M9 (they were inert placeholder spans
+               until these pages existed). -->
+          <a href="/feedback">Feedback</a>
+          <a href="/privacy">Privacy policy</a>
+          <a href="/terms">Terms and conditions</a>
         </div>
         <div>
           <h4>Services</h4>
