@@ -98,7 +98,7 @@ struct SeedCommand: Command {
         try await findOrCreateMembership(db: db, groupID: secondGroup.requireID(), userID: dana.requireID(), role: .owner)
         try await findOrCreateMembership(db: db, groupID: secondGroup.requireID(), userID: bob.requireID(), role: .member)
 
-        _ = try await findOrCreateEvent(
+        let empireStateTrip = try await findOrCreateEvent(
             db: db,
             title: "Trip to the Empire State Building",
             description: "A classic tourist trip, expat-style — meet at the entrance.",
@@ -126,7 +126,7 @@ struct SeedCommand: Command {
             hostGroupID: group.requireID()
         )
 
-        _ = try await findOrCreateEvent(
+        let lisbonFoodCrawl = try await findOrCreateEvent(
             db: db,
             title: "Lisbon Food Crawl",
             description: "Group meetup for the second seeded group -- a walking tour of Alfama's best tascas.",
@@ -140,7 +140,37 @@ struct SeedCommand: Command {
             hostGroupID: secondGroup.requireID()
         )
 
-        console.print("Seed complete: 4 users, 2 groups, 3 events.")
+        // M7: Follow relationships + a couple of real joins, so the
+        // Followers/Following tabs (criterion #2) and the feed itself
+        // (criterion #3) have real seeded content to check on the human
+        // checkpoint, not just an empty state. `FollowService.follow` and
+        // `EventService.join` are the same tested service methods every
+        // real user action goes through -- not a hand-rolled insert --
+        // which is also what makes the join calls below idempotent
+        // (`join`'s own `alreadyJoined` early return) and what fires the
+        // real `ActivityFeedItem` fan-out (`FollowService.follow`'s
+        // `.startedFollowing` item; `EventService.join`'s
+        // `fanOutActivity`) exactly once even across repeated `seed` runs.
+        //
+        // Bob and Carol both follow Alice; Dana follows Bob:
+        //   Alice: 2 followers (Bob, Carol), follows 0
+        //   Bob:   1 follower (Dana), follows 1 (Alice)
+        //   Carol: 0 followers, follows 1 (Alice)
+        //   Dana:  0 followers, follows 1 (Bob)
+        let followService = FollowService(db: db)
+        try await followService.follow(followerID: bob.requireID(), followingID: alice.requireID())
+        try await followService.follow(followerID: carol.requireID(), followingID: alice.requireID())
+        try await followService.follow(followerID: dana.requireID(), followingID: bob.requireID())
+
+        // Alice (followed by Bob and Carol) joins Dana's group's event ->
+        // both Bob's and Carol's feeds get a "joinedEvent" item. Bob
+        // (followed by Dana) joins Alice's own event -> Dana's feed gets
+        // one too.
+        let eventService = EventService(db: db)
+        _ = try await eventService.join(lisbonFoodCrawl, userID: alice.requireID())
+        _ = try await eventService.join(empireStateTrip, userID: bob.requireID())
+
+        console.print("Seed complete: 4 users, 2 groups, 3 events, 3 follows, 2 joins.")
     }
 
     private func findOrCreateUser(db: Database, email: String, displayName: String, photoURL: String?) async throws -> User {
