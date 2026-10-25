@@ -15,6 +15,21 @@
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/ws.js"></script>
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!--
+      docs/design-system.md's tokens + a few reusable component classes
+      (.card, .btn-*, .badge-*, .ds-*), added here so any page extending
+      this layout can opt into them incrementally -- see
+      Public/css/design-tokens.css's own header comment for what's
+      copied verbatim from the canvas versus extrapolated, and
+      MILESTONES.md's incremental-design-system-rollout note for why
+      this isn't a full site reskin in one PR. Loading it here (global)
+      rather than per-page is safe because it defines nothing but :root
+      custom properties and specifically-named classes -- no bare
+      element selectors -- so a page that never references those class
+      names (still plain Tailwind, e.g. /events, /groups) renders
+      identically to before this was added.
+    -->
+    <link rel="stylesheet" href="/css/design-tokens.css">
 </head>
 <body class="bg-gray-50 text-gray-900 min-h-screen flex flex-col">
     <nav class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
@@ -22,6 +37,9 @@
         <div class="flex items-center gap-4 text-sm">
             <a href="/events" class="hover:underline">Events</a>
             <a href="/groups" class="hover:underline">Groups</a>
+            #if(isSignedIn):
+            <a href="/feed" class="hover:underline">Feed</a>
+            #endif
             #if(isSignedIn):
             <form method="post" action="/logout" class="inline">
                 <button type="submit" class="hover:underline">Sign out</button>
