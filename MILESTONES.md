@@ -186,6 +186,8 @@ Not started. The legacy app's `src/locales/en/translate.json` key structure (ref
 
 Not started — and can't meaningfully proceed without the DigitalOcean/Stripe/Apple/Google/DNS accounts listed in AGENTS.md's prerequisites section, which this build environment doesn't have access to.
 
+**Design audit (after M9)**: `docs/design-audit.md` compares every built screen against the design canvas's six artboards and `docs/design-system.md`, listing what's built, what's deferred and what's missing, plus a one-page roll-up of the non-design items deferred across M1–M9.
+
 ---
 
 **Definition of done reminder** (plan §6): all of M1–M13 passing, with M3 allowed to slip under its escape hatch, every §5 known-risk item explicitly tested, and nothing from §4's deferred list built without a written reason. We're a long way from that — this tracker exists so the distance is always visible rather than assumed.
