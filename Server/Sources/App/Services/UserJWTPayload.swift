@@ -45,7 +45,11 @@ struct UserBearerAuthenticator: AsyncBearerAuthenticator {
         }
         guard let userID = payload.userID,
               let user = try await User.find(userID, on: request.db),
-              !user.isSuspended
+              !user.isSuspended,
+              // M9: an erased account's still-unexpired token must stop
+              // working too (criterion #4) -- JWTs can't be revoked
+              // server-side, so this check is the only barrier for them.
+              user.erasedAt == nil
         else {
             return
         }

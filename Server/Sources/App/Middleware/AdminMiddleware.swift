@@ -17,11 +17,16 @@ struct AdminMiddleware: AsyncMiddleware {
 /// session/token (M10 acceptance criterion #3) — checked as a matter of
 /// course by both the session and bearer authenticators, but this
 /// middleware gives every protected route group a second, explicit check.
+///
+/// M9: also refuses an erased account (a processed deletion request). In
+/// practice `AccountService.process` already deleted every session and
+/// sign-in identity for it, so this is defense in depth, not the primary
+/// barrier.
 struct NotSuspendedMiddleware: AsyncMiddleware {
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
-        if let user = request.auth.get(User.self), user.isSuspended {
+        if let user = request.auth.get(User.self), user.isSuspended || user.erasedAt != nil {
             request.auth.logout(User.self)
-            throw Abort(.unauthorized, reason: "This account has been suspended.")
+            throw Abort(.unauthorized, reason: user.erasedAt != nil ? "This account has been deleted." : "This account has been suspended.")
         }
         return try await next.respond(to: request)
     }

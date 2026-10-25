@@ -75,11 +75,11 @@ struct GroupWebController: RouteCollection {
         // EventWebController's dashboard/detail routes already documented:
         // session-authenticated-but-not-guarded, so isSignedIn reflects a
         // real session without requiring one.
-        let optionallyAuthenticated = routes.grouped(User.sessionAuthenticator())
+        let optionallyAuthenticated = routes.grouped(User.activeSessionAuthenticator())
         optionallyAuthenticated.get("groups", use: directory)
         optionallyAuthenticated.get("groups", ":slug", use: detail)
 
-        let authenticated = routes.grouped(User.sessionAuthenticator(), User.guardMiddleware(), NotSuspendedMiddleware())
+        let authenticated = routes.grouped(User.activeSessionAuthenticator(), User.guardMiddleware(), NotSuspendedMiddleware())
         authenticated.get("groups", "new", use: newForm)
         authenticated.post("groups", use: create)
         authenticated.post("groups", ":groupID", "join", use: join)

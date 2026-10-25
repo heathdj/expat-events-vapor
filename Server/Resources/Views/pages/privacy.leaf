@@ -1,0 +1,39 @@
+#extend("layouts/base"):
+#export("body"):
+<!--
+  M9 (/privacy). Placeholder body text by the user's decision -- see
+  LegalWebController's doc comment for why the legacy app's policy wasn't
+  carried over. The version stamp is real: it's LegalVersions.privacyPolicy,
+  the same constant AuthService records as User.privacyPolicyVersion on
+  every new account (criterion #7). Section headings are the topics the
+  final policy needs to cover (architecture §13); only their wording is
+  placeholder.
+-->
+<div class="ds-page-head">
+    <h1>Privacy Policy</h1>
+    <p><span class="ds-version">Version #(version)</span></p>
+</div>
+
+<div class="card ds-prose">
+    <div class="ds-alert ds-alert-info">This page is a placeholder. The final Privacy Policy is still being written.</div>
+
+    <h2>What we collect</h2>
+    <p>Placeholder.</p>
+
+    <h2>How we use it</h2>
+    <p>Placeholder.</p>
+
+    <h2>Who processes it</h2>
+    <p>Placeholder.</p>
+
+    <h2>How long we keep it</h2>
+    <p>Placeholder.</p>
+
+    <h2>Your rights</h2>
+    <p>Placeholder. You can already download your data or ask us to delete your account from your <a href="/account">account page</a>.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about this policy: <a href="mailto:support@expatevents.net">support@expatevents.net</a>.</p>
+</div>
+#endexport
+#endextend

@@ -12,6 +12,11 @@ struct AuthWebController: RouteCollection {
         let title = "Sign in"
         let appleClientID: String?
         let googleClientID: String?
+        /// M9 criterion #1: the exact versions `AuthService` records on a
+        /// new account are the ones shown on this page -- both read from
+        /// `LegalVersions`, never typed twice.
+        let privacyPolicyVersion = LegalVersions.privacyPolicy
+        let termsVersion = LegalVersions.terms
     }
 
     func boot(routes: RoutesBuilder) throws {
@@ -20,7 +25,7 @@ struct AuthWebController: RouteCollection {
         routes.post("login", "apple", use: signInWithApple)
         routes.post("login", "google", use: signInWithGoogle)
 
-        let protected = routes.grouped(User.sessionAuthenticator())
+        let protected = routes.grouped(User.activeSessionAuthenticator())
             .grouped(User.guardMiddleware())
         protected.post("logout", use: logout)
     }

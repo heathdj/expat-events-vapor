@@ -40,6 +40,12 @@ final class User: Model, Content, @unchecked Sendable {
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
+    /// Set when this account's `DeletionRequest` is processed (M9). The row
+    /// survives as a tombstone with every identifying field erased --
+    /// see `AddUserErasedAt`'s doc comment for why it isn't soft-deleted.
+    @OptionalField(key: "erased_at")
+    var erasedAt: Date?
+
     @Children(for: \.$user)
     var oauthIdentities: [OAuthIdentity]
 

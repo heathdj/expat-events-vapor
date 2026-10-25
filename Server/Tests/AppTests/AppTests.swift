@@ -1859,5 +1859,518 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(afterUnfollowCount, 0)
         }
     }
-}
 
+    // MARK: - M9 verification
+
+    /// Inserts an `Event` row directly, bypassing `EventService.createEvent`,
+    /// so retention tests can create events dated in the past.
+    private func makeEventRow(
+        db: Database,
+        title: String,
+        date: Date,
+        hostUserID: UUID? = nil,
+        hostGroupID: UUID? = nil,
+        isCancelled: Bool = false
+    ) async throws -> Event {
+        let event = Event(
+            title: title,
+            description: "M9 test",
+            category: .culture,
+            date: date,
+            cityAddress: "Test City",
+            cityLat: 0, cityLng: 0,
+            venueAddress: "Test Venue",
+            venueLat: 0, venueLng: 0,
+            hostUserID: hostUserID,
+            hostGroupID: hostGroupID,
+            isCancelled: isCancelled
+        )
+        try await event.save(on: db)
+        return event
+    }
+
+    /// M9 acceptance criterion #1: sign-up records `privacyPolicyVersion`,
+    /// `termsVersion` and `consentedAt` matching what was actually
+    /// presented -- the sign-in page shows the same `LegalVersions` strings
+    /// a brand-new account then records.
+    func testLoginPagePresentsTheLegalVersionsANewAccountRecords() async throws {
+        try await withApp { app in
+            try await app.test(.GET, "/login") { res async in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains(#"href="/terms""#), "Sign-in must link the Terms it asks people to agree to.")
+                XCTAssertTrue(html.contains(#"href="/privacy""#), "Sign-in must link the Privacy Policy it asks people to agree to.")
+                XCTAssertTrue(html.contains("(version \(LegalVersions.terms))"))
+                XCTAssertTrue(html.contains("(version \(LegalVersions.privacyPolicy))"))
+            }
+
+            let before = Date()
+            let user = try await AuthService(db: app.db).findOrCreateUser(
+                provider: .google,
+                providerUserID: "m9-consent-google-id",
+                email: "m9-consent@example.com",
+                displayName: "Consent Tester"
+            )
+            XCTAssertEqual(user.privacyPolicyVersion, LegalVersions.privacyPolicy)
+            XCTAssertEqual(user.termsVersion, LegalVersions.terms)
+            XCTAssertGreaterThanOrEqual(user.consentedAt.timeIntervalSince1970, before.timeIntervalSince1970 - 1)
+        }
+    }
+
+    /// M9 acceptance criterion #2: "Download my data" contains only the
+    /// requester's own profile, events, group memberships and chat
+    /// messages -- nothing belonging to anyone else, including another
+    /// person's reply sitting in the middle of the requester's own thread.
+    func testDataExportContainsOnlyTheRequestersOwnData() async throws {
+        try await withApp { app in
+            let alice = try await makeUser(db: app.db, email: "m9-export-alice@example.com", plan: .premium, displayName: "Alice Export")
+            let bob = try await makeUser(db: app.db, email: "m9-export-bob@example.com", displayName: "Bob Export")
+            let aliceID = try alice.requireID()
+            let bobID = try bob.requireID()
+
+            let eventService = EventService(db: app.db)
+            let aliceEvent = try await eventService.createEvent(makeEventRequest(title: "Alice Hosted Event"), hostUserID: aliceID)
+            let bobEvent = try await eventService.createEvent(makeEventRequest(title: "Bob Hosted Event"), hostUserID: bobID)
+            _ = try await eventService.join(aliceEvent, userID: bobID)
+            _ = try await eventService.join(bobEvent, userID: aliceID)
+            _ = try await GroupService(db: app.db).createGroup(CreateGroupRequest(name: "Alice Export Group", description: "M9"), ownerID: aliceID)
+
+            let aliceMessage = ChatMessage(eventID: try aliceEvent.requireID(), userID: aliceID, text: "Alice's own message")
+            try await aliceMessage.save(on: app.db)
+            let bobReply = ChatMessage(eventID: try aliceEvent.requireID(), userID: bobID, parentID: try aliceMessage.requireID(), text: "Bob's reply")
+            try await bobReply.save(on: app.db)
+            let aliceAnswer = ChatMessage(eventID: try aliceEvent.requireID(), userID: aliceID, parentID: try bobReply.requireID(), text: "Alice answers Bob")
+            try await aliceAnswer.save(on: app.db)
+            try await FollowService(db: app.db).follow(followerID: aliceID, followingID: bobID)
+            try await OAuthIdentity(userID: aliceID, provider: .google, providerUserID: "m9-export-alice-google").save(on: app.db)
+
+            // Signed out: bounced to sign-in, never an export.
+            try await app.test(.POST, "/account/export") { res async in
+                XCTAssertEqual(res.status, .seeOther)
+                XCTAssertEqual(res.headers.first(name: .location), "/login")
+            }
+
+            let cookie = try await sessionCookie(for: alice, db: app.db)
+            // Captured, then decoded after the closure: this `app.test`
+            // response closure is non-throwing, so `try` can't be used
+            // inside it (found by the first M9 `swift test` run).
+            var exportBody = ""
+            try await app.test(.POST, "/account/export", headers: ["Cookie": cookie]) { res async in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertEqual(res.headers.contentType, .json)
+                XCTAssertTrue(res.headers.first(name: .contentDisposition)?.contains("attachment") ?? false, "Should download as a file, not render in the page.")
+
+                let body = res.body.string
+                XCTAssertTrue(body.contains("Alice's own message"))
+                XCTAssertTrue(body.contains("Alice answers Bob"))
+                XCTAssertTrue(body.contains("Alice Hosted Event"))
+                XCTAssertTrue(body.contains("Alice Export Group"))
+                XCTAssertFalse(body.contains("Bob's reply"), "Another person's chat message must never appear, even mid-thread.")
+                XCTAssertFalse(body.contains("Bob Export"), "Another person's name must never appear.")
+                XCTAssertFalse(body.contains("m9-export-bob@example.com"), "Another person's email must never appear.")
+                XCTAssertFalse(body.contains("Bob Hosted Event"), "An event Alice merely attended is listed by ID, not with its host's content.")
+                exportBody = body
+            }
+
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601WithFractionalSeconds
+            let export = try decoder.decode(AccountDataExportDTO.self, from: Data(exportBody.utf8))
+            let bobEventID = try bobEvent.requireID()
+            XCTAssertEqual(export.profile.id, aliceID)
+            XCTAssertEqual(export.profile.email, "m9-export-alice@example.com")
+            XCTAssertEqual(export.hostedEvents.map(\.title), ["Alice Hosted Event"])
+            XCTAssertEqual(export.attendedEvents.map(\.eventID), [bobEventID])
+            XCTAssertEqual(export.groupMemberships.map(\.groupName), ["Alice Export Group"])
+            XCTAssertEqual(Set(export.chatMessages.map(\.text)), Set(["Alice's own message", "Alice answers Bob"]))
+            XCTAssertEqual(export.followingUserIDs, [bobID])
+            XCTAssertEqual(export.signInProviders, [.google])
+
+            let records = try await DataExportRequest.query(on: app.db).filter(\.$user.$id == aliceID).all()
+            XCTAssertEqual(records.count, 1, "Each export is recorded.")
+            XCTAssertEqual(records.first?.status, .ready)
+        }
+    }
+
+    /// M9 acceptance criterion #3, first half: "Delete account" creates a
+    /// `DeletionRequest` -- and, per the user's M9 decision ("request
+    /// only, process later"), erases nothing yet. Asking twice doesn't
+    /// queue two requests. The button follows the destructive-action
+    /// convention: hx-confirm, and no inline submit-handler confirm.
+    func testDeleteAccountRecordsOnePendingRequestAndErasesNothingYet() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "m9-delete-request@example.com", displayName: "Pending Deleter")
+            let userID = try user.requireID()
+            let cookie = try await sessionCookie(for: user, db: app.db)
+
+            try await app.test(.GET, "/account", headers: ["Cookie": cookie]) { res async in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains(#"hx-post="/account/delete""#))
+                XCTAssertTrue(html.contains(#"hx-confirm="Delete your ExpatEvents account?"#), "Deleting an account is destructive and must confirm.")
+                XCTAssertFalse(html.contains("onsubmit="), "hx-confirm alone -- never also an inline submit confirm (the M4/M6 double-dialog bug).")
+            }
+
+            for _ in 0..<2 {
+                try await app.test(.POST, "/account/delete", headers: ["Cookie": cookie, "HX-Request": "true"]) { res async in
+                    XCTAssertEqual(res.status, .ok)
+                    let html = res.body.string
+                    XCTAssertTrue(html.contains(#"id="account-data-fragment""#), "An htmx request gets just the fragment back.")
+                    XCTAssertTrue(html.contains("Deletion requested"))
+                }
+            }
+
+            let requests = try await DeletionRequest.query(on: app.db).filter(\.$user.$id == userID).all()
+            XCTAssertEqual(requests.count, 1, "A second request while one is pending must not queue another.")
+            XCTAssertNil(requests.first?.processedAt)
+
+            let reloaded = try await User.find(userID, on: app.db)
+            XCTAssertEqual(reloaded?.displayName, "Pending Deleter", "Nothing is erased until the request is processed.")
+            XCTAssertNil(reloaded?.erasedAt)
+
+            try await app.test(.GET, "/account", headers: ["Cookie": cookie]) { res async in
+                XCTAssertEqual(res.status, .ok, "Still signed in while the request is pending.")
+                let html = res.body.string
+                XCTAssertTrue(html.contains("Deletion requested"))
+                XCTAssertFalse(html.contains(#"hx-post="/account/delete""#), "No second delete button once a request is pending.")
+            }
+        }
+    }
+
+    /// M9 acceptance criterion #3, second half: processing the request
+    /// hard-erases identifying `User` fields, anonymizes (doesn't delete)
+    /// the user's chat messages, and nulls (doesn't delete) the user
+    /// reference on their invoices.
+    func testProcessingADeletionErasesTheUserAnonymizesChatAndKeepsInvoices() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "m9-erase@example.com", displayName: "Erase Me")
+            let other = try await makeUser(db: app.db, email: "m9-erase-other@example.com", displayName: "Stays Put")
+            let userID = try user.requireID()
+            let otherID = try other.requireID()
+
+            let eventService = EventService(db: app.db)
+            let othersEvent = try await eventService.createEvent(makeEventRequest(title: "Other's Event"), hostUserID: otherID)
+            _ = try await eventService.join(othersEvent, userID: userID)
+            let ownUpcoming = try await eventService.createEvent(makeEventRequest(title: "Erased Host's Upcoming Event"), hostUserID: userID)
+
+            let message = ChatMessage(eventID: try othersEvent.requireID(), userID: userID, text: "A message that should survive")
+            try await message.save(on: app.db)
+
+            let subscription = try await PlanLimitsService(db: app.db).subscription(for: userID)
+            let invoice = Invoice(subscriptionID: try subscription.requireID(), userID: userID, amountCents: 1000, status: .paid, stripeInvoiceID: "in_m9_test")
+            try await invoice.save(on: app.db)
+
+            try await FollowService(db: app.db).follow(followerID: otherID, followingID: userID)
+            try await OAuthIdentity(userID: userID, provider: .google, providerUserID: "m9-erase-google").save(on: app.db)
+            try await PasskeyCredential(userID: userID, credentialID: "m9-erase-passkey", publicKey: "test-key", deviceLabel: "Test device").save(on: app.db)
+            let feedback = try await FeedbackService(db: app.db).submit(message: "Feedback from a soon-erased user", name: "Erase Me", email: "m9-erase@example.com", userID: userID)
+
+            let account = AccountService(db: app.db)
+            _ = try await account.requestDeletion(for: userID)
+            let processed = try await account.processPendingDeletions()
+            XCTAssertEqual(processed, 1)
+            let processedAgain = try await account.processPendingDeletions()
+            XCTAssertEqual(processedAgain, 0, "An already-processed request isn't processed twice.")
+
+            let erased = try await User.find(userID, on: app.db)
+            XCTAssertNotNil(erased?.erasedAt)
+            XCTAssertEqual(erased?.displayName, AccountService.erasedDisplayName)
+            XCTAssertNotEqual(erased?.email, "m9-erase@example.com")
+            XCTAssertNil(erased?.photoURL)
+
+            let survivingMessage = try await ChatMessage.find(try message.requireID(), on: app.db)
+            XCTAssertEqual(survivingMessage?.text, "A message that should survive", "Chat is anonymized, not deleted.")
+            XCTAssertEqual(survivingMessage?.$user.id, userID, "Still attached to the (now anonymous) tombstone row.")
+
+            let survivingInvoice = try await Invoice.find(try invoice.requireID(), on: app.db)
+            XCTAssertNotNil(survivingInvoice, "Invoices are kept for financial records.")
+            XCTAssertNil(survivingInvoice?.$user.id, "...but no longer point at the person.")
+            XCTAssertEqual(survivingInvoice?.amountCents, 1000)
+
+            let identityCount = try await OAuthIdentity.query(on: app.db).filter(\.$user.$id == userID).count()
+            XCTAssertEqual(identityCount, 0)
+            let passkeyCount = try await PasskeyCredential.query(on: app.db).filter(\.$user.$id == userID).count()
+            XCTAssertEqual(passkeyCount, 0)
+            let followCount = try await Follow.query(on: app.db).filter(\.$following.$id == userID).count()
+            XCTAssertEqual(followCount, 0)
+            let attendanceCount = try await EventAttendee.query(on: app.db).filter(\.$user.$id == userID).count()
+            XCTAssertEqual(attendanceCount, 0)
+
+            let upcoming = try await Event.find(try ownUpcoming.requireID(), on: app.db)
+            XCTAssertEqual(upcoming?.isCancelled, true, "An erased host's upcoming events are cancelled.")
+
+            let scrubbedFeedback = try await Feedback.find(try feedback.requireID(), on: app.db)
+            XCTAssertEqual(scrubbedFeedback?.message, "Feedback from a soon-erased user")
+            XCTAssertNil(scrubbedFeedback?.$user.id)
+            XCTAssertNil(scrubbedFeedback?.email)
+            XCTAssertNil(scrubbedFeedback?.name)
+
+            let request = try await DeletionRequest.query(on: app.db).filter(\.$user.$id == userID).first()
+            XCTAssertNotNil(request?.processedAt)
+        }
+    }
+
+    /// M9 acceptance criterion #4: after deletion, no sign-in method can
+    /// authenticate that account -- not a live web session, not an
+    /// unexpired API token, and not signing in with the same Google
+    /// account again (which creates a brand-new, unrelated account).
+    func testAnErasedAccountCannotAuthenticateBySessionTokenOrProvider() async throws {
+        try await withApp { app in
+            let auth = AuthService(db: app.db)
+            let user = try await auth.findOrCreateUser(provider: .google, providerUserID: "m9-auth-google", email: "m9-auth@example.com", displayName: "Auth Erased")
+            let userID = try user.requireID()
+            let cookie = try await sessionCookie(for: user, db: app.db)
+            let req = Request(application: app, on: app.eventLoopGroup.any())
+            let token = try req.jwt.sign(UserJWTPayload.make(userID: userID))
+
+            // Baseline: both work before erasure.
+            try await app.test(.GET, "/account", headers: ["Cookie": cookie]) { res async in
+                XCTAssertEqual(res.status, .ok)
+            }
+            try await app.test(.GET, "/api/v1/me", headers: ["Authorization": "Bearer \(token)"]) { res async in
+                XCTAssertEqual(res.status, .ok)
+            }
+
+            let account = AccountService(db: app.db)
+            _ = try await account.requestDeletion(for: userID)
+            try await account.processPendingDeletions()
+
+            try await app.test(.GET, "/account", headers: ["Cookie": cookie]) { res async in
+                XCTAssertEqual(res.status, .seeOther, "The old session no longer signs anyone in.")
+                XCTAssertEqual(res.headers.first(name: .location), "/login")
+            }
+            try await app.test(.GET, "/api/v1/me", headers: ["Authorization": "Bearer \(token)"]) { res async in
+                XCTAssertEqual(res.status, .unauthorized, "An unexpired token for an erased account must stop working.")
+            }
+
+            let again = try await auth.findOrCreateUser(provider: .google, providerUserID: "m9-auth-google", email: "m9-auth@example.com", displayName: "Auth Erased")
+            XCTAssertNotEqual(try again.requireID(), userID, "Signing in with the same Google account must not reach the erased account.")
+            XCTAssertNil(again.erasedAt)
+        }
+    }
+
+    /// M9 independent review follow-up to criterion #4: the guarded-route
+    /// checks above aren't the only way in. An erased account must also
+    /// be refused by (a) the session authenticator itself, even for a
+    /// session that survived the purge (a sign-in racing the erasure),
+    /// so optionally-authenticated pages don't treat it as signed in;
+    /// (b) the bearer authenticator itself, which is all that protects
+    /// optionally-authenticated API routes; (c) an already-open chat
+    /// socket, which only checked the user when it connected. And its
+    /// tombstone can't be followed or viewed as a profile.
+    func testErasedAccountIsRefusedOutsideGuardedRoutesToo() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "m9-refuse@example.com", displayName: "Refuse Me")
+            let other = try await makeUser(db: app.db, email: "m9-refuse-other@example.com")
+            let userID = try user.requireID()
+            let otherID = try other.requireID()
+            let event = try await EventService(db: app.db).createEvent(makeEventRequest(title: "Refuse Chat Event"), hostUserID: otherID)
+            let eventID = try event.requireID()
+            let token = try Request(application: app, on: app.eventLoopGroup.any()).jwt.sign(UserJWTPayload.make(userID: userID))
+
+            let account = AccountService(db: app.db)
+            _ = try await account.requestDeletion(for: userID)
+            try await account.processPendingDeletions()
+
+            // A session row inserted *after* the purge, as a racing
+            // sign-in would: the authenticator itself must refuse it.
+            let lateCookie = try await sessionCookie(for: user, db: app.db)
+            try await app.test(.GET, "/feedback", headers: ["Cookie": lateCookie]) { res async in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertFalse(res.body.string.contains("erased.invalid"), "Must not prefill the tombstone's email as if signed in.")
+                XCTAssertFalse(res.body.string.contains(#"href="/account""#), "The nav must show the signed-out state.")
+            }
+
+            let bearerRequest = Request(application: app, on: app.eventLoopGroup.any())
+            try await UserBearerAuthenticator().authenticate(bearer: BearerAuthorization(token: token), for: bearerRequest)
+            XCTAssertFalse(bearerRequest.auth.has(User.self), "The bearer authenticator itself must refuse an erased account.")
+
+            do {
+                _ = try await ChatService(db: app.db).send(SendChatMessageRequest(text: "Posted after erasure"), eventID: eventID, userID: userID)
+                XCTFail("An erased account must not be able to send chat messages over an already-open socket.")
+            } catch let error as APIError {
+                XCTAssertEqual(error.code, "account_unavailable")
+            }
+            let postedCount = try await ChatMessage.query(on: app.db).filter(\.$text == "Posted after erasure").count()
+            XCTAssertEqual(postedCount, 0)
+
+            do {
+                try await FollowService(db: app.db).follow(followerID: otherID, followingID: userID)
+                XCTFail("An erased account's tombstone must not be followable.")
+            } catch is APIError {}
+
+            try await app.test(.GET, "/profile/\(userID)") { res async in
+                XCTAssertEqual(res.status, .notFound, "An erased account has no public profile.")
+            }
+        }
+    }
+
+    /// M9 acceptance criterion #5: the retention job deletes past and
+    /// cancelled events (and their chat) older than 30 days, for Free,
+    /// Premium and group hosts alike -- and leaves newer ones alone.
+    func testRetentionCleanupDeletesOldPastAndCancelledEventsForEveryHostType() async throws {
+        try await withApp { app in
+            let free = try await makeUser(db: app.db, email: "m9-retention-free@example.com", plan: .free)
+            let premium = try await makeUser(db: app.db, email: "m9-retention-premium@example.com", plan: .premium)
+            let freeID = try free.requireID()
+            let premiumID = try premium.requireID()
+            let group = try await GroupService(db: app.db).createGroup(CreateGroupRequest(name: "M9 Retention Group", description: "M9"), ownerID: premiumID)
+            let groupID = try group.requireID()
+
+            let now = Date()
+            let day: TimeInterval = 24 * 60 * 60
+            let oldFree = try await makeEventRow(db: app.db, title: "Old Free", date: now - 31 * day, hostUserID: freeID)
+            let oldPremium = try await makeEventRow(db: app.db, title: "Old Premium", date: now - 31 * day, hostUserID: premiumID)
+            let oldGroup = try await makeEventRow(db: app.db, title: "Old Group", date: now - 31 * day, hostGroupID: groupID)
+            let oldCancelled = try await makeEventRow(db: app.db, title: "Old Cancelled", date: now - 45 * day, hostUserID: freeID, isCancelled: true)
+            let recentPast = try await makeEventRow(db: app.db, title: "Recent Past", date: now - 29 * day, hostUserID: freeID)
+            let futureCancelled = try await makeEventRow(db: app.db, title: "Future Cancelled", date: now + 10 * day, hostUserID: premiumID, isCancelled: true)
+
+            let oldChat = ChatMessage(eventID: try oldFree.requireID(), userID: freeID, text: "Old chat")
+            try await oldChat.save(on: app.db)
+
+            let deleted = try await RetentionService(db: app.db).run(now: now)
+            XCTAssertEqual(deleted, 4)
+
+            for event in [oldFree, oldPremium, oldGroup, oldCancelled] {
+                let found = try await Event.find(try event.requireID(), on: app.db)
+                XCTAssertNil(found, "\(event.title) is older than 30 days and should be gone.")
+            }
+            for event in [recentPast, futureCancelled] {
+                let found = try await Event.find(try event.requireID(), on: app.db)
+                XCTAssertNotNil(found, "\(event.title) is inside the retention window and should be kept.")
+            }
+            let chatLeft = try await ChatMessage.find(try oldChat.requireID(), on: app.db)
+            XCTAssertNil(chatLeft, "A deleted event's chat goes with it.")
+        }
+    }
+
+    /// M9 acceptance criterion #6: `/account` renders the signed-in user's
+    /// own profile and plan and hosts the export/delete controls; a
+    /// signed-out visitor is sent to sign in; the display name can be
+    /// edited, and an empty one is rejected.
+    func testAccountPageShowsProfilePlanAndDataControlsAndEditsDisplayName() async throws {
+        try await withApp { app in
+            try await app.test(.GET, "/account") { res async in
+                XCTAssertEqual(res.status, .seeOther)
+                XCTAssertEqual(res.headers.first(name: .location), "/login")
+            }
+
+            let user = try await makeUser(db: app.db, email: "m9-account@example.com", plan: .premium, displayName: "Account Owner")
+            let userID = try user.requireID()
+            let cookie = try await sessionCookie(for: user, db: app.db)
+
+            try await app.test(.GET, "/account", headers: ["Cookie": cookie]) { res async in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains("Account Owner"))
+                XCTAssertTrue(html.contains("m9-account@example.com"))
+                XCTAssertTrue(html.contains("Premium member"))
+                XCTAssertTrue(html.contains("Member since"))
+                XCTAssertTrue(html.contains(#"action="/account/export""#))
+                XCTAssertTrue(html.contains(#"hx-post="/account/delete""#))
+            }
+
+            try await app.test(.POST, "/account/profile", headers: [
+                "Cookie": cookie,
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: "displayName=++Renamed+Owner++")) { res async in
+                XCTAssertEqual(res.status, .seeOther)
+                XCTAssertEqual(res.headers.first(name: .location), "/account")
+            }
+            let renamed = try await User.find(userID, on: app.db)
+            XCTAssertEqual(renamed?.displayName, "Renamed Owner")
+
+            try await app.test(.POST, "/account/profile", headers: [
+                "Cookie": cookie,
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: "displayName=+++")) { res async in
+                XCTAssertEqual(res.status, .unprocessableEntity)
+                XCTAssertTrue(res.body.string.contains("Display name must be between 1 and 80 characters."))
+            }
+            let unchanged = try await User.find(userID, on: app.db)
+            XCTAssertEqual(unchanged?.displayName, "Renamed Owner")
+        }
+    }
+
+    /// M9 acceptance criterion #7: `/privacy` and `/terms` render, each
+    /// stamped with the version string sign-up records -- and every app
+    /// page plus the home page links to them and to `/feedback`, so none
+    /// of the three is a dead end or a dead link (criterion #8).
+    func testLegalPagesShowRecordedVersionsAndAreLinkedEverywhere() async throws {
+        try await withApp { app in
+            try await app.test(.GET, "/privacy") { res async in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertTrue(res.body.string.contains("Privacy Policy"))
+                XCTAssertTrue(res.body.string.contains("Version \(LegalVersions.privacyPolicy)"))
+            }
+            try await app.test(.GET, "/terms") { res async in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertTrue(res.body.string.contains("Terms and Conditions"))
+                XCTAssertTrue(res.body.string.contains("Version \(LegalVersions.terms)"))
+            }
+            for path in ["/", "/events"] {
+                try await app.test(.GET, path) { res async in
+                    XCTAssertEqual(res.status, .ok)
+                    let html = res.body.string
+                    XCTAssertTrue(html.contains(#"href="/feedback""#), "\(path) should link /feedback")
+                    XCTAssertTrue(html.contains(#"href="/privacy""#), "\(path) should link /privacy")
+                    XCTAssertTrue(html.contains(#"href="/terms""#), "\(path) should link /terms")
+                }
+            }
+        }
+    }
+
+    /// M9 acceptance criterion #8: both a signed-in and a signed-out
+    /// visitor can submit feedback, each submission creating exactly one
+    /// `Feedback` row (`userID` set for signed in, nil for anonymous); an
+    /// empty message is rejected without creating anything.
+    func testFeedbackCanBeSubmittedSignedInOrAnonymously() async throws {
+        try await withApp { app in
+            try await app.test(.GET, "/feedback") { res async in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertTrue(res.body.string.contains(#"action="/feedback""#))
+            }
+
+            try await app.test(.POST, "/feedback", headers: [
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: "name=&email=&message=Anonymous+feedback+here")) { res async in
+                XCTAssertEqual(res.status, .seeOther)
+                XCTAssertEqual(res.headers.first(name: .location), "/feedback?sent=1")
+            }
+            let anonymous = try await Feedback.query(on: app.db).filter(\.$message == "Anonymous feedback here").all()
+            XCTAssertEqual(anonymous.count, 1)
+            XCTAssertNil(anonymous.first?.$user.id)
+            XCTAssertNil(anonymous.first?.email, "An empty field is stored as nil, not an empty string.")
+
+            let user = try await makeUser(db: app.db, email: "m9-feedback@example.com", displayName: "Fed Back")
+            let userID = try user.requireID()
+            let cookie = try await sessionCookie(for: user, db: app.db)
+            try await app.test(.GET, "/feedback", headers: ["Cookie": cookie]) { res async in
+                XCTAssertTrue(res.body.string.contains(#"value="m9-feedback@example.com""#), "Signed-in visitors get their email prefilled.")
+            }
+            try await app.test(.POST, "/feedback", headers: [
+                "Cookie": cookie,
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: "name=Fed+Back&email=m9-feedback%40example.com&message=Signed-in+feedback")) { res async in
+                XCTAssertEqual(res.status, .seeOther)
+            }
+            let signedIn = try await Feedback.query(on: app.db).filter(\.$message == "Signed-in feedback").all()
+            XCTAssertEqual(signedIn.count, 1)
+            XCTAssertEqual(signedIn.first?.$user.id, userID)
+            XCTAssertEqual(signedIn.first?.email, "m9-feedback@example.com")
+
+            try await app.test(.POST, "/feedback", headers: [
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: "message=+++")) { res async in
+                XCTAssertEqual(res.status, .unprocessableEntity)
+                XCTAssertTrue(res.body.string.contains("Please enter your feedback."))
+            }
+            let total = try await Feedback.query(on: app.db).count()
+            XCTAssertEqual(total, 2, "The rejected submission must not create a row.")
+
+            try await app.test(.GET, "/feedback?sent=1") { res async in
+                XCTAssertTrue(res.body.string.contains("Thanks for your feedback"))
+            }
+        }
+    }
+}

@@ -13,7 +13,7 @@ This is a reference doc, not a build target in itself — it exists so anyone (h
 | `EventDetail.dc.html` | Event detail | `/events/:id` (M4, built — chat panel itself is M5) |
 | `Groups.dc.html` | Groups | Group directory/detail (M6, not yet built) |
 | `GroupEventForm.dc.html` | Create group event | `/events/new` (M4, built; group-hosting picker is M6) |
-| `Account.dc.html` | Account & billing | Account/billing pages (M8/M9, not yet built) |
+| `Account.dc.html` | Account & billing | `/account` — built in M9 (`pages/account.leaf`, `ds-account-*`/`ds-plan-*` rules in `Public/css/design-tokens.css`): profile card, plan pill and plan cards. The plan toggle, Upgrade/Cancel, payment method and billing history wait on M8 |
 
 ## Design tokens
 

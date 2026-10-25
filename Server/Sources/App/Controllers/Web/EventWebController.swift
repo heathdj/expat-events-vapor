@@ -68,11 +68,11 @@ struct EventWebController: RouteCollection {
         // false on every page load, even for someone who just signed in.
         // (Found via a real click-through: the nav never flipped to
         // "Sign out" because of exactly this.)
-        let optionallyAuthenticated = routes.grouped(User.sessionAuthenticator())
+        let optionallyAuthenticated = routes.grouped(User.activeSessionAuthenticator())
         optionallyAuthenticated.get("events", use: dashboard)
         optionallyAuthenticated.get("events", ":eventID", use: detail)
 
-        let authenticated = routes.grouped(User.sessionAuthenticator(), User.guardMiddleware(), NotSuspendedMiddleware())
+        let authenticated = routes.grouped(User.activeSessionAuthenticator(), User.guardMiddleware(), NotSuspendedMiddleware())
         authenticated.get("events", "new", use: newForm)
         authenticated.post("events", use: create)
         authenticated.post("events", ":eventID", "cancel", use: cancel)

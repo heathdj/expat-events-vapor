@@ -39,8 +39,7 @@
             <a href="/groups" class="hover:underline">Groups</a>
             #if(isSignedIn):
             <a href="/feed" class="hover:underline">Feed</a>
-            #endif
-            #if(isSignedIn):
+            <a href="/account" class="hover:underline">Account</a>
             <form method="post" action="/logout" class="inline">
                 <button type="submit" class="hover:underline">Sign out</button>
             </form>
@@ -52,5 +51,14 @@
     <main class="flex-1 max-w-5xl w-full mx-auto px-4 py-8">
         #import("body")
     </main>
+    <!-- M9: every app page links to the legal pages and feedback, not
+         just the marketing home page's footer. -->
+    <footer class="border-t border-gray-200 bg-white px-4 py-4 text-sm text-gray-500">
+        <div class="max-w-5xl mx-auto flex flex-wrap gap-4">
+            <a href="/feedback" class="hover:underline">Feedback</a>
+            <a href="/privacy" class="hover:underline">Privacy policy</a>
+            <a href="/terms" class="hover:underline">Terms and conditions</a>
+        </div>
+    </footer>
 </body>
 </html>

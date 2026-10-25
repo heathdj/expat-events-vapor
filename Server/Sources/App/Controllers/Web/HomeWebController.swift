@@ -24,7 +24,7 @@ struct HomeWebController: RouteCollection {
     }
 
     func boot(routes: RoutesBuilder) throws {
-        let optionallyAuthenticated = routes.grouped(User.sessionAuthenticator())
+        let optionallyAuthenticated = routes.grouped(User.activeSessionAuthenticator())
         optionallyAuthenticated.get(use: index)
     }
 

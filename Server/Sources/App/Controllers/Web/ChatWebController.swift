@@ -26,7 +26,7 @@ struct ChatWebController: RouteCollection {
         // open a chat socket for any event — guardMiddleware() throws
         // before the socket ever upgrades, same as EventWebController's
         // write routes.
-        let authenticated = routes.grouped(User.sessionAuthenticator(), User.guardMiddleware(), NotSuspendedMiddleware())
+        let authenticated = routes.grouped(User.activeSessionAuthenticator(), User.guardMiddleware(), NotSuspendedMiddleware())
 
         authenticated.webSocket("events", ":eventID", "chat", "ws", shouldUpgrade: { req in
             try await Self.assertCanOpenSocket(req)
