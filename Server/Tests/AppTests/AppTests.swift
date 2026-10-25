@@ -2373,4 +2373,302 @@ final class AppTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Event basics (post-M9 design audit: dates, create form, paging)
+
+    /// Events never showed their date anywhere. The same event now shows
+    /// it on the list, its own page, its group's page and its host's
+    /// profile, as the host's wall-clock time (see `EventDateTag`).
+    func testEventDatesShowOnListDetailGroupAndProfile() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "dates-owner@example.com", plan: .premium, displayName: "Date Owner")
+            let ownerID = try owner.requireID()
+            let group = try await GroupService(db: app.db).createGroup(CreateGroupRequest(name: "Dates Group", description: "Dates"), ownerID: ownerID)
+            let date = try XCTUnwrap(EventDateParsing.parse("2030-12-05T18:30"))
+            let service = EventService(db: app.db)
+            let own = try await service.createEvent(CreateEventRequest(
+                title: "Dated Own Event", description: "d", category: .culture, date: date,
+                cityAddress: "Lisbon", cityLat: 0, cityLng: 0, venueAddress: "Venue", venueLat: 0, venueLng: 0
+            ), hostUserID: ownerID)
+            _ = try await service.createEvent(CreateEventRequest(
+                title: "Dated Group Event", description: "d", category: .culture, date: date,
+                cityAddress: "Lisbon", cityLat: 0, cityLng: 0, venueAddress: "Venue", venueLat: 0, venueLng: 0,
+                hostGroupID: try group.requireID()
+            ), hostUserID: ownerID)
+
+            let short = "Thu, Dec 5 · 6:30 PM"
+            try await app.test(.GET, "/events") { res async in
+                XCTAssertTrue(res.body.string.contains(short), "The events list should show each event's date.")
+            }
+            try await app.test(.GET, "/events/\(try own.requireID())") { res async in
+                XCTAssertTrue(res.body.string.contains("Thursday, December 5, 2030 · 6:30 PM"), "The event page should show the full date.")
+            }
+            try await app.test(.GET, "/groups/\(group.slug)") { res async in
+                XCTAssertTrue(res.body.string.contains(short), "A group's upcoming events should show their dates.")
+            }
+            try await app.test(.GET, "/profile/\(ownerID)") { res async in
+                XCTAssertTrue(res.body.string.contains(short), "A profile's hosted events should show their dates.")
+            }
+        }
+    }
+
+    /// The website's create form could never actually create an event: the
+    /// `datetime-local` value was decoded as a `Date`, which Vapor's form
+    /// decoder only accepts as a number. It also had no "Host as",
+    /// visibility or attendee-limit fields. A moderator can now host as
+    /// their group, privately, with a limit; a plain member sees no group
+    /// option; and a plain self-hosted submission works.
+    func testWebCreateEventFormHostsAsGroupWithVisibilityAndLimit() async throws {
+        try await withApp { app in
+            let owner = try await makeUser(db: app.db, email: "form-owner@example.com", plan: .premium)
+            let moderator = try await makeUser(db: app.db, email: "form-moderator@example.com")
+            let member = try await makeUser(db: app.db, email: "form-member@example.com")
+            let groupService = GroupService(db: app.db)
+            let group = try await groupService.createGroup(CreateGroupRequest(name: "Form Group", description: "Form"), ownerID: try owner.requireID())
+            let groupID = try group.requireID()
+            try await groupService.join(group, userID: try moderator.requireID())
+            try await groupService.join(group, userID: try member.requireID())
+            try await groupService.promoteModerator(group, memberUserID: try moderator.requireID(), requesterID: try owner.requireID())
+
+            let moderatorCookie = try await sessionCookie(for: moderator, db: app.db)
+            let memberCookie = try await sessionCookie(for: member, db: app.db)
+
+            try await app.test(.GET, "/events/new", headers: ["Cookie": moderatorCookie]) { res async in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertTrue(res.body.string.contains(#"name="hostGroupID""#), "A moderator can choose to host as the group.")
+                XCTAssertTrue(res.body.string.contains("Form Group"))
+                XCTAssertTrue(res.body.string.contains(#"name="visibility""#))
+                XCTAssertTrue(res.body.string.contains(#"name="attendeeLimit""#))
+            }
+            try await app.test(.GET, "/events/new", headers: ["Cookie": memberCookie]) { res async in
+                XCTAssertFalse(res.body.string.contains(#"name="hostGroupID""#), "A plain member has no group to host as.")
+            }
+
+            let groupForm = "hostGroupID=\(groupID)&title=Group+Picnic&description=Bring+food&category=food&date=2030-12-05T18%3A30&cityAddress=Lisbon&cityLat=0&cityLng=0&venueAddress=Park&venueLat=0&venueLng=0&visibility=private&attendeeLimit=30"
+            try await app.test(.POST, "/events", headers: [
+                "Cookie": moderatorCookie,
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: groupForm)) { res async in
+                XCTAssertEqual(res.status, .seeOther)
+            }
+            let groupEvent = try await Event.query(on: app.db).filter(\.$title == "Group Picnic").first()
+            XCTAssertEqual(groupEvent?.$hostGroup.id, groupID)
+            XCTAssertNil(groupEvent?.$hostUser.id)
+            XCTAssertEqual(groupEvent?.visibility, .private)
+            XCTAssertEqual(groupEvent?.attendeeLimit, 30)
+            XCTAssertEqual(groupEvent?.date, EventDateParsing.parse("2030-12-05T18:30"))
+
+            let selfForm = "title=Plain+Meetup&description=Coffee&category=culture&date=2030-12-06T10%3A00&cityAddress=Lisbon&cityLat=0&cityLng=0&venueAddress=Cafe&venueLat=0&venueLng=0&visibility=public&attendeeLimit="
+            try await app.test(.POST, "/events", headers: [
+                "Cookie": memberCookie,
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: selfForm)) { res async in
+                XCTAssertEqual(res.status, .seeOther, "A plain self-hosted submission from the real form must work.")
+            }
+            let selfEvent = try await Event.query(on: app.db).filter(\.$title == "Plain Meetup").first()
+            XCTAssertEqual(selfEvent?.$hostUser.id, try member.requireID())
+            XCTAssertNil(selfEvent?.attendeeLimit, "An empty limit means the plan default.")
+        }
+    }
+
+    /// When the server rejects the form (a Free plan limit, an invalid
+    /// limit, an unreadable date), the form comes back with a message and
+    /// what was typed, instead of a blank form with no explanation.
+    func testWebCreateEventFormRejectionsShowAMessageAndKeepInput() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "form-free@example.com", plan: .free)
+            let cookie = try await sessionCookie(for: user, db: app.db)
+            let base = "title=Kept+Title&description=Kept+description&category=music&cityAddress=Porto&cityLat=0&cityLng=0&venueAddress=Hall&venueLat=0&venueLng=0"
+            let cases: [(String, String)] = [
+                ("&date=2030-12-05T18%3A30&visibility=private", "Private events require a Premium plan."),
+                ("&date=2030-12-05T18%3A30&visibility=public&attendeeLimit=6", "Free accounts can have up to 5 attendees per event."),
+                ("&date=2030-12-05T18%3A30&visibility=public&attendeeLimit=0", "The attendee limit must be at least 1."),
+                ("&date=not-a-date&visibility=public", "Enter the event"),
+            ]
+            for (extra, expected) in cases {
+                try await app.test(.POST, "/events", headers: [
+                    "Cookie": cookie,
+                    "Content-Type": "application/x-www-form-urlencoded",
+                ], body: .init(string: base + extra)) { res async in
+                    XCTAssertEqual(res.status, .badRequest)
+                    let html = res.body.string
+                    XCTAssertTrue(html.contains(expected), "Expected the message \"\(expected)\".")
+                    XCTAssertTrue(html.contains(#"value="Kept Title""#), "What was typed should be kept.")
+                }
+            }
+            let created = try await Event.query(on: app.db).filter(\.$title == "Kept Title").count()
+            XCTAssertEqual(created, 0)
+        }
+    }
+
+    /// An explicit attendee limit is held to the host's plan cap (so a Free
+    /// host can't lift their 5-person cap by typing a bigger number), and
+    /// is what joining is checked against.
+    func testAttendeeLimitIsCappedByPlanAndEnforcedOnJoin() async throws {
+        try await withApp { app in
+            let free = try await makeUser(db: app.db, email: "limit-free@example.com", plan: .free)
+            let premium = try await makeUser(db: app.db, email: "limit-premium@example.com", plan: .premium)
+            let service = EventService(db: app.db)
+            func request(_ limit: Int) -> CreateEventRequest {
+                CreateEventRequest(title: "Limit \(limit)", description: "d", category: .culture, date: Date().addingTimeInterval(3600),
+                                   cityAddress: "City", cityLat: 0, cityLng: 0, venueAddress: "Venue", venueLat: 0, venueLng: 0,
+                                   attendeeLimit: limit)
+            }
+            do {
+                _ = try await service.createEvent(request(10), hostUserID: try free.requireID())
+                XCTFail("A Free host can't set a limit above 5.")
+            } catch is APIError {}
+            do {
+                _ = try await service.createEvent(request(101), hostUserID: try premium.requireID())
+                XCTFail("No host can set a limit above 100.")
+            } catch is APIError {}
+            _ = try await service.createEvent(request(100), hostUserID: try premium.requireID())
+
+            let small = try await service.createEvent(request(2), hostUserID: try premium.requireID())
+            for index in 1...2 {
+                let attendee = try await makeUser(db: app.db, email: "limit-attendee-\(index)@example.com")
+                _ = try await service.join(small, userID: try attendee.requireID())
+            }
+            let third = try await makeUser(db: app.db, email: "limit-attendee-3@example.com")
+            do {
+                _ = try await service.join(small, userID: try third.requireID())
+                XCTFail("The third join on a 2-person event must be rejected.")
+            } catch is APIError {}
+        }
+    }
+
+    /// `/events` only ever showed the first 20 events, with no way to see
+    /// the rest. "Load more events" now fetches the next page (keeping
+    /// any filters) and is gone on the last page.
+    func testEventsListLoadsMoreInPagesOfTwentyKeepingFilters() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "paging-host@example.com", plan: .premium)
+            let hostID = try host.requireID()
+            let day: TimeInterval = 24 * 60 * 60
+            for index in 1...25 {
+                let event = try await makeEventRow(db: app.db, title: "Paged Event \(index)", date: Date().addingTimeInterval(Double(index) * day), hostUserID: hostID)
+                event.category = .music
+                try await event.save(on: app.db)
+            }
+            _ = try await makeEventRow(db: app.db, title: "Unrelated Culture Event", date: Date().addingTimeInterval(day), hostUserID: hostID)
+
+            try await app.test(.GET, "/events?category=music") { res async in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertEqual(html.components(separatedBy: "data-event-card").count - 1, 20)
+                XCTAssertTrue(html.contains(#"id="load-more""#))
+                XCTAssertTrue(html.contains("page=2"))
+                XCTAssertTrue(html.contains("category=music"), "Load more must keep the current filter.")
+                XCTAssertFalse(html.contains("Unrelated Culture Event"))
+            }
+            try await app.test(.GET, "/events?category=music&page=2", headers: ["HX-Request": "true"]) { res async in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertEqual(html.components(separatedBy: "data-event-card").count - 1, 5)
+                XCTAssertFalse(html.contains(#"id="load-more""#), "No button on the last page.")
+                XCTAssertFalse(html.contains("<html"), "An htmx request gets just the cards, not the whole page.")
+                XCTAssertTrue(html.contains("Paged Event 25"))
+            }
+        }
+    }
+
+    /// Event-basics review: a huge `?page=` overflowed the offset
+    /// arithmetic and crashed the whole server. It's clamped now, on the
+    /// web page and the API list alike.
+    func testHugeEventsPageNumberIsClampedNotACrash() async throws {
+        try await withApp { app in
+            try await app.test(.GET, "/events?page=9223372036854775807") { res async in
+                XCTAssertEqual(res.status, .ok)
+            }
+            try await app.test(.GET, "/api/v1/events?page=9223372036854775807") { res async in
+                XCTAssertEqual(res.status, .ok)
+            }
+        }
+    }
+
+    /// Event-basics review: an explicit limit set while Premium no longer
+    /// survives a downgrade to Free; it's held to the current plan's cap.
+    /// Also the limits' edges: a Free host may set exactly 5, and a
+    /// group-hosted event may not go above 100.
+    func testAttendeeLimitEdgesAndDowngrade() async throws {
+        try await withApp { app in
+            let free = try await makeUser(db: app.db, email: "edge-free@example.com", plan: .free)
+            let owner = try await makeUser(db: app.db, email: "edge-owner@example.com", plan: .premium)
+            let ownerID = try owner.requireID()
+            let group = try await GroupService(db: app.db).createGroup(CreateGroupRequest(name: "Edge Group", description: "Edge"), ownerID: ownerID)
+            let service = EventService(db: app.db)
+            let limits = PlanLimitsService(db: app.db)
+            func request(_ limit: Int, groupID: UUID? = nil) -> CreateEventRequest {
+                CreateEventRequest(title: "Edge \(limit)", description: "d", category: .culture, date: Date().addingTimeInterval(3600),
+                                   cityAddress: "City", cityLat: 0, cityLng: 0, venueAddress: "Venue", venueLat: 0, venueLng: 0,
+                                   hostGroupID: groupID, attendeeLimit: limit)
+            }
+
+            let freeFive = try await service.createEvent(request(5), hostUserID: try free.requireID())
+            let freeFiveLimit = try await limits.attendeeLimit(for: freeFive)
+            XCTAssertEqual(freeFiveLimit, 5)
+
+            do {
+                _ = try await service.createEvent(request(101, groupID: try group.requireID()), hostUserID: ownerID)
+                XCTFail("A group-hosted event can't go above 100.")
+            } catch is APIError {}
+
+            let premiumFifty = try await service.createEvent(request(50), hostUserID: ownerID)
+            let beforeDowngrade = try await limits.attendeeLimit(for: premiumFifty)
+            XCTAssertEqual(beforeDowngrade, 50)
+            let subscription = try await limits.subscription(for: ownerID)
+            subscription.plan = .free
+            try await subscription.save(on: app.db)
+            let afterDowngrade = try await limits.attendeeLimit(for: premiumFifty)
+            XCTAssertEqual(afterDowngrade, 5, "After a downgrade, the Free cap applies even to a limit set while Premium.")
+        }
+    }
+
+    /// The JSON API goes through the same `EventService.createEvent`
+    /// check, so it can't be used to get around the Free attendee cap.
+    func testAPICannotBypassFreeAttendeeLimitCap() async throws {
+        try await withApp { app in
+            let free = try await makeUser(db: app.db, email: "api-limit-free@example.com", plan: .free)
+            let token = try Request(application: app, on: app.eventLoopGroup.any()).jwt.sign(UserJWTPayload.make(userID: try free.requireID()))
+            let body = CreateEventRequest(title: "API Limit Ten", description: "d", category: .culture, date: Date().addingTimeInterval(3600),
+                                          cityAddress: "City", cityLat: 0, cityLng: 0, venueAddress: "Venue", venueLat: 0, venueLng: 0,
+                                          attendeeLimit: 10)
+            try await app.test(.POST, "/api/v1/events", headers: ["Authorization": "Bearer \(token)"],
+                               beforeRequest: { (req: inout XCTHTTPRequest) async throws in
+                                   try req.content.encode(body)
+                               },
+                               afterResponse: { (res: XCTHTTPResponse) async throws in
+                                   XCTAssertEqual(res.status, .forbidden, "The API maps plan-limit errors to 403.")
+                                   XCTAssertTrue(res.body.string.contains("Free accounts can have up to 5 attendees per event."))
+                               })
+            let created = try await Event.query(on: app.db).filter(\.$title == "API Limit Ten").count()
+            XCTAssertEqual(created, 0)
+        }
+    }
+
+    /// With exactly one page of events there's no "Load more" button.
+    func testEventsListHasNoLoadMoreWithExactlyOnePage() async throws {
+        try await withApp { app in
+            let host = try await makeUser(db: app.db, email: "one-page-host@example.com", plan: .premium)
+            let hostID = try host.requireID()
+            for index in 1...EventService.pageSize {
+                _ = try await makeEventRow(db: app.db, title: "One Page \(index)", date: Date().addingTimeInterval(Double(index) * 3600), hostUserID: hostID)
+            }
+            try await app.test(.GET, "/events") { res async in
+                let html = res.body.string
+                XCTAssertEqual(html.components(separatedBy: "data-event-card").count - 1, EventService.pageSize)
+                XCTAssertFalse(html.contains(#"id="load-more""#))
+            }
+        }
+    }
+
+    /// "Load more" URLs encode "+" (which Vapor would otherwise read back
+    /// as a space) and keep every filter.
+    func testEventsPageURLKeepsFiltersAndEncodesPlus() async throws {
+        let url = EventWebController.pageURL(for: EventFilterQuery(category: .music, city: "A+B & C"), page: 2)
+        XCTAssertTrue(url.hasPrefix("/events?"))
+        XCTAssertTrue(url.contains("category=music"))
+        XCTAssertTrue(url.contains("city=A%2BB%20%26%20C"))
+        XCTAssertTrue(url.contains("page=2"))
+    }
 }
