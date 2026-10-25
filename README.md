@@ -30,7 +30,7 @@ expatevents-mvp/
       Middleware/              Admin gating, API error shaping, session/suspension checks
       Services/                Business logic shared by Web and API controllers
       WebSockets/              (not yet built — M5)
-      Commands/                Dev database seeding
+      Commands/                Dev seeding, plus the M9 process-deletions / retention-cleanup jobs
     Resources/Views/           Leaf templates
     Public/                    Static assets (Tailwind/htmx/Alpine — currently CDN-loaded, see note below)
     docker-compose.yml         Local Postgres for development
@@ -62,6 +62,11 @@ expatevents-mvp/
    swift run App migrate --yes   # creates every table from Migrations/
    swift run App seed            # 4 users, 2 groups, 3 events — see Commands/SeedCommand.swift
    swift run App serve           # starts the server on http://localhost:8080
+   ```
+   Two maintenance commands (M9), run by hand for now (scheduling them in production is M13's job):
+   ```sh
+   swift run App process-deletions   # erases accounts with a pending "Delete account" request
+   swift run App retention-cleanup   # deletes past/cancelled events (and their chat) older than 30 days
    ```
 4. Check it's alive:
    ```sh

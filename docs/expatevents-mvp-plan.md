@@ -149,6 +149,8 @@ Work strictly from the acceptance criteria below, milestone by milestone — don
 7. `/privacy` and `/terms` render static content, each stamped with the version string that `User.privacyPolicyVersion`/`termsVersion` record at signup (criterion #1) — not placeholder text, and not the same version string hardcoded in two places that could drift apart.
 8. `/feedback` lets both a signed-in and a signed-out visitor submit a message, creating exactly one `Feedback` row (`userID` set for a signed-in submitter, `nil` for anonymous) per submission — no page anywhere in the app should still 404 or dead-link to `/feedback` after this.
 
+**Decisions made at the start of M9 (user, via AskUserQuestion)**: `/privacy` and `/terms` ship with placeholder body text under a real version stamp; the final wording is the user's to supply before launch (M13 gate). "Delete account" records a request only, and the fulfillment path for criteria #3–#4 is the `process-deletions` command until M10's admin Data-requests section exists. "Download my data" is an instant JSON download. Retention (criterion #5) is a `retention-cleanup` command for cron/a scheduled job, not an in-process timer. M8 was skipped at the user's request, so `/account` shows the current plan read-only, with no plan changes, payment method or billing history.
+
 ### M10 — Admin web site
 **Deliverables**: `/admin` route group with role middleware; the six sections (Dashboard, Users, Events, Groups, Billing, Data requests, Audit log).
 
