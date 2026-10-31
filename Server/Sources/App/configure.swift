@@ -13,6 +13,7 @@ public func configure(_ app: Application) async throws {
     try configureSessions(app)
     try configureJWT(app)
     app.chatRoomRegistry = ChatRoomRegistry()
+    configureLocation(app)
 
     app.views.use(.leaf)
     app.leaf.tags["eventDate"] = EventDateTag()
@@ -123,6 +124,8 @@ private func registerMigrations(_ app: Application) {
     // into it, so an already-migrated database only runs these two.
     app.migrations.add(AddUserErasedAt())
     app.migrations.add(AddFeedbackContactFields())
+    // Location lookup.
+    app.migrations.add(AddEventLocationFields())
 }
 
 // MARK: - Commands

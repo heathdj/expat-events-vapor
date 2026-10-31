@@ -12,6 +12,12 @@ public struct EventSummaryDTO: Codable, Sendable, Equatable, Identifiable {
     public let attendeeCount: Int
     public let visibility: EventVisibility
     public let isCancelled: Bool
+    /// The event's IANA time zone ("Europe/Lisbon"). `date` is a real
+    /// instant; show it in this zone. nil when no zone is known: events
+    /// created before location lookup existed (their `date` is the host's
+    /// wall-clock time stored as UTC) or created through the API without
+    /// coordinates or a zone. Show those in UTC.
+    public let timeZone: String?
 
     public init(
         id: UUID,
@@ -23,7 +29,8 @@ public struct EventSummaryDTO: Codable, Sendable, Equatable, Identifiable {
         hostPhotoURL: String?,
         attendeeCount: Int,
         visibility: EventVisibility,
-        isCancelled: Bool
+        isCancelled: Bool,
+        timeZone: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -35,6 +42,7 @@ public struct EventSummaryDTO: Codable, Sendable, Equatable, Identifiable {
         self.attendeeCount = attendeeCount
         self.visibility = visibility
         self.isCancelled = isCancelled
+        self.timeZone = timeZone
     }
 }
 
@@ -61,6 +69,8 @@ public struct EventDTO: Codable, Sendable, Equatable, Identifiable {
     public let isCancelled: Bool
     public let attendees: [AttendeeDTO]
     public let isRequesterAttending: Bool
+    /// See `EventSummaryDTO.timeZone`.
+    public let timeZone: String?
 
     public init(
         id: UUID,
@@ -83,7 +93,8 @@ public struct EventDTO: Codable, Sendable, Equatable, Identifiable {
         isRecurring: Bool,
         isCancelled: Bool,
         attendees: [AttendeeDTO],
-        isRequesterAttending: Bool
+        isRequesterAttending: Bool,
+        timeZone: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -106,6 +117,7 @@ public struct EventDTO: Codable, Sendable, Equatable, Identifiable {
         self.isCancelled = isCancelled
         self.attendees = attendees
         self.isRequesterAttending = isRequesterAttending
+        self.timeZone = timeZone
     }
 }
 
@@ -143,6 +155,18 @@ public struct CreateEventRequest: Codable, Sendable, Equatable {
     /// set, must be at least 1 and no more than that same plan cap; the
     /// server rejects anything else.
     public let attendeeLimit: Int?
+    /// IANA time zone of the event's location. Optional: when omitted, the
+    /// server works it out from the venue's (or city's) coordinates. Either
+    /// way `date` must be the real instant (e.g. 18:30 in Lisbon is
+    /// `18:30Z` in winter, `17:30Z` in summer).
+    public let timeZone: String?
+    /// The provider's place IDs for the chosen city and venue, kept so a
+    /// place can be looked up again (and refreshed, for providers that
+    /// limit how long coordinates may be stored).
+    public let cityPlaceID: String?
+    public let venuePlaceID: String?
+    /// Which provider those IDs belong to ("google", "apple", "sample").
+    public let placeProvider: String?
 
     public init(
         title: String,
@@ -158,7 +182,11 @@ public struct CreateEventRequest: Codable, Sendable, Equatable {
         hostGroupID: UUID? = nil,
         visibility: EventVisibility = .public,
         isRecurring: Bool = false,
-        attendeeLimit: Int? = nil
+        attendeeLimit: Int? = nil,
+        timeZone: String? = nil,
+        cityPlaceID: String? = nil,
+        venuePlaceID: String? = nil,
+        placeProvider: String? = nil
     ) {
         self.title = title
         self.description = description
@@ -174,6 +202,10 @@ public struct CreateEventRequest: Codable, Sendable, Equatable {
         self.visibility = visibility
         self.isRecurring = isRecurring
         self.attendeeLimit = attendeeLimit
+        self.timeZone = timeZone
+        self.cityPlaceID = cityPlaceID
+        self.venuePlaceID = venuePlaceID
+        self.placeProvider = placeProvider
     }
 }
 
