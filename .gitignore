@@ -5,7 +5,9 @@
 Package.resolved
 
 # Vapor
-Server/.env
+# Any .env, wherever it is (a stray copy at the repo root held real keys).
+# .env.example and Server/.env.testing don't match and stay tracked.
+.env
 
 # NOTE: Server/Public/css/*.css used to be blanket-ignored here, written
 # at M1 in anticipation of a future Tailwind CLI build step (architecture

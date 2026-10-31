@@ -67,7 +67,7 @@ Every section on the artboard is built (hero, value props, how-it-works, pricing
 | Breadcrumb ("Events › title") | ❌ |
 | Hero banner: category photo, "Hosted by a group" tag, title, date, place | ❌ plain heading; the full date is now shown under it (fixed) |
 | Action bar: host avatar + name, Join / "Going ✓" toggle | 🟡 Join/Leave works over htmx but is plain; no avatar |
-| Info panel: description, full date, venue with "Show map" | 🟡 description, venue and (since the event-basics PR) the full date, as plain text; **no map** (venue latitude/longitude are always 0, see the event form) |
+| Info panel: description, full date, venue with "Show map" | 🟡 description, venue and the full date (shown in the event's own time zone), as plain text; **no map** yet, though new events now have real coordinates (location PR) |
 | Live chat card: "Connected" pulse, avatars, timestamps, your-messages-vs-others' bubbles, "Reply" link | 🟡 live chat works (M5) but is plain: no avatars, no timestamps, no bubbles, and **no way to reply from the UI** (replies work server-side; M5 scope trim) |
 | Sidebar: "N people going", attendees with avatars, Host and You tags | 🟡 a plain attendee list with a count |
 
@@ -94,7 +94,7 @@ This is where the most behavior is missing, not just styling.
 |---|---|
 | "Host as" chips: Myself or one of your groups | 🟡 **fixed** as a plain "Host as" dropdown (Myself plus every group you own or moderate); the design's chips are the restyle |
 | Category picker with photos | 🟡 a plain dropdown |
-| Date & time, venue | 🟡 plain inputs; no city/venue autocomplete, so latitude/longitude are saved as 0 (tracked since M4) |
+| Date & time, venue | 🟡 plain date input; city and venue now have live autocomplete with coordinates and a time zone (location PR), still plain styling |
 | Visibility: Public / Private cards | 🟡 **fixed** as plain Public/Private radio buttons; the design's cards are the restyle |
 | "Limit attendees" switch + stepper | 🟡 **fixed** as a plain number field; the create request now carries `attendeeLimit`, capped by plan (5 for a Free host, 100 otherwise). The switch + stepper is the restyle |
 | "Recurring event" switch | ❌ not on the form (in scope only as a flag) |
