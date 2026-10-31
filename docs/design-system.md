@@ -89,7 +89,7 @@ Extracted from the canvas and committed to `Server/Public/design/`:
 - `avatar-placeholder.png` — generic user avatar (160×160) used everywhere a real profile photo isn't available yet.
 - `categories/{culture,travel,food,music,drinks,film}.jpg` — one placeholder photo per `EventCategory` case, used as event-card thumbnails, category picker images on the create-event form, and a couple of group-cover images in the canvas mockup.
 
-**These are the design tool's own sample/placeholder images, not licensed production assets.** They're fine for development, staging, and the server-checkpoint reviews, but flagged in `WARNINGS.md` as needing real, rights-cleared photography (or a different placeholder strategy, e.g. solid category-color tiles) before production launch — this should not silently become the real launch asset set.
+**Update 2026-10-31**: the files above were the design tool's own placeholder images. The user has since supplied the real assets (same logo mark, a larger default avatar, and real photos for all six categories) and confirmed they're cleared for production; they replace the placeholders in the theme foundation PR (see `docs/design-audit.md` §0).
 
 ## Known gaps between the canvas and the actual data model
 
