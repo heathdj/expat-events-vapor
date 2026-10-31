@@ -17,6 +17,8 @@ func routes(_ app: Application) throws {
     try app.register(collection: LegalWebController())
     try app.register(collection: FeedbackWebController())
     try app.register(collection: PlacesWebController())
+    // M10: the admin site, /admin (admins only).
+    try app.register(collection: AdminWebController())
 
     // `/api/v1` — bearer-token authenticated, wrapped in APIErrorMiddleware
     // so every error response is the shared `{code, message}` shape

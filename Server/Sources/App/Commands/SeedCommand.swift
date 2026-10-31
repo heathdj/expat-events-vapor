@@ -72,6 +72,25 @@ struct SeedCommand: Command {
         try await setPlan(db: db, userID: carol.requireID(), plan: .free)
         try await setPlan(db: db, userID: dana.requireID(), plan: .premium)
 
+        // M10: the dev/tester's own account is an admin, so /admin can be
+        // checked by signing in normally. In production the first admin
+        // is made with `swift run App make-admin <email>`.
+        if alice.role != .admin, application.environment != .production {
+            alice.role = .admin
+            try await alice.save(on: db)
+        }
+        // M10: a fictional account with a pending "Delete account"
+        // request, so the admin Data-requests queue has something in it.
+        // Processing it erases Erin; the next seed run makes a new Erin
+        // (the old row's email was erased) with a new pending request.
+        let erin = try await findOrCreateUser(
+            db: db,
+            email: "erin@example.com",
+            displayName: "Erin Lindqvist",
+            photoURL: "https://randomuser.me/api/portraits/women/12.jpg"
+        )
+        _ = try await AccountService(db: db).requestDeletion(for: erin.requireID())
+
         let group = try await findOrCreateGroup(
             db: db,
             slug: "digital-nomads-berlin",
@@ -174,7 +193,7 @@ struct SeedCommand: Command {
         _ = try await eventService.join(lisbonFoodCrawl, userID: alice.requireID())
         _ = try await eventService.join(empireStateTrip, userID: bob.requireID())
 
-        console.print("Seed complete: 4 users, 2 groups, 3 events, 3 follows, 2 joins.")
+        console.print("Seed complete: 5 users (Alice is an admin; Erin has a pending deletion request), 2 groups, 3 events, 3 follows, 2 joins.")
     }
 
     private func findOrCreateUser(db: Database, email: String, displayName: String, photoURL: String?) async throws -> User {

@@ -1,0 +1,49 @@
+#extend("admin/layout"):
+#export("body"):
+<div class="mb-6">
+    <div class="text-xs font-medium text-slate-400">Admin › #(chrome.section)</div>
+    <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">Billing</h1>
+</div>
+<div class="mb-5 flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+    <svg class="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+    <span>Billing isn't built yet (M8). Subscriptions, invoices, refunds and failed payments will show here once it is. Until then this page shows plan counts and comped accounts.</span>
+</div>
+<div class="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="text-[13px] font-semibold text-slate-500">Free accounts</div>
+        <div class="mt-2 text-3xl font-bold tracking-tight text-slate-900"><span data-stat="free">#(free)</span></div>
+    </div>
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="text-[13px] font-semibold text-slate-500">Premium (not comped)</div>
+        <div class="mt-2 text-3xl font-bold tracking-tight text-amber-600"><span data-stat="paid">#(paidPremium)</span></div>
+    </div>
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="text-[13px] font-semibold text-slate-500">Comped Premium</div>
+        <div class="mt-2 text-3xl font-bold tracking-tight text-violet-600"><span data-stat="comped">#(comped)</span></div>
+    </div>
+</div>
+<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <h2 class="border-b border-slate-200 px-5 py-3 text-[15px] font-semibold text-slate-900">Comped accounts</h2>
+    #if(hasCompedUsers):
+    <table class="min-w-full text-sm">
+        <tbody class="divide-y divide-slate-100">
+            #for(user in compedUsers):
+            <tr class="odd:bg-white even:bg-slate-50/70 hover:bg-teal-50/60">
+                <td class="px-5 py-3">
+                    <a href="#(user.detailURL)" class="flex items-center gap-3">
+                        <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full #(user.avatarColor) text-xs font-bold text-white">#(user.initials)</span>
+                        <span class="font-semibold text-slate-900 hover:text-teal-700">#(user.displayName)</span>
+                    </a>
+                </td>
+                <td class="px-5 py-3 text-slate-500">#(user.email)</td>
+                <td class="px-5 py-3 text-right"><a href="#(user.detailURL)" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Manage</a></td>
+            </tr>
+            #endfor
+        </tbody>
+    </table>
+    #else:
+    <p class="px-5 py-10 text-center text-sm text-slate-400">No comped accounts.</p>
+    #endif
+</div>
+#endexport
+#endextend

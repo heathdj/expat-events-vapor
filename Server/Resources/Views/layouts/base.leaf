@@ -40,6 +40,7 @@
             #if(isSignedIn):
             <a href="/feed" class="hover:underline">Feed</a>
             <a href="/account" class="hover:underline">Account</a>
+            #adminNavLink()
             <form method="post" action="/logout" class="inline">
                 <button type="submit" class="hover:underline">Sign out</button>
             </form>

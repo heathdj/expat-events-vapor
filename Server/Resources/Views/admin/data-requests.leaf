@@ -1,0 +1,95 @@
+#extend("admin/layout"):
+#export("body"):
+<div class="mb-6">
+    <div class="text-xs font-medium text-slate-400">Admin › #(chrome.section)</div>
+    <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">Data requests</h1>
+    <p class="mt-1 text-sm text-slate-500">GDPR requests. Each deletion must be done within 30 days of being asked for.</p>
+</div>
+<div class="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <h2 class="border-b border-slate-200 px-5 py-3 text-[15px] font-semibold text-slate-900">Deletion requests</h2>
+    #if(hasDeletions):
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <tr>
+                    <th scope="col" class="px-5 py-3">Account</th>
+                    <th scope="col" class="px-4 py-3">Requested</th>
+                    <th scope="col" class="w-64 px-4 py-3">Deadline</th>
+                    <th scope="col" class="px-5 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                #for(request in deletions):
+                <tr class="odd:bg-white even:bg-slate-50/70" data-admin-deletion-row>
+                    <td class="px-5 py-3">
+                        <a href="#(request.userURL)" class="flex items-center gap-3">
+                            <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full #(request.avatarColor) text-xs font-bold text-white">#(request.initials)</span>
+                            <span>
+                                <span class="block font-semibold text-slate-900 hover:text-teal-700">#(request.displayName)</span>
+                                <span class="block text-xs text-slate-500">#(request.email)</span>
+                            </span>
+                        </a>
+                        #if(request.ownsGroup):
+                        <div class="mt-1.5 text-xs text-amber-700">Owns a group. After erasing, hand it on from Groups.</div>
+                        #endif
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-3 text-slate-500">#(request.requestedOn)</td>
+                    <td class="px-4 py-3">
+                        <div class="flex items-center justify-between text-xs">
+                            #if(request.isOverdue):
+                            <span class="font-semibold text-rose-700">#(request.deadlineLabel)</span>
+                            #else:
+                            <span class="font-semibold text-slate-700">#(request.deadlineLabel)</span>
+                            #endif
+                            <span class="text-slate-400">Due #(request.dueOn)</span>
+                        </div>
+                        <div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                            #if(request.isOverdue):
+                            <div class="h-full rounded-full bg-rose-500" style="width: #(request.progressWidth)"></div>
+                            #else:
+                            <div class="h-full rounded-full bg-teal-500" style="width: #(request.progressWidth)"></div>
+                            #endif
+                        </div>
+                    </td>
+                    <td class="whitespace-nowrap px-5 py-3 text-right">
+                        <form method="post" action="#(request.processURL)" hx-post="#(request.processURL)"
+                              hx-confirm="Erase this account now? Their name, email, sign-in methods, follows and attendance are removed for good. This can't be undone.">
+                            <button type="submit" class="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">
+                                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-13M9 7V4h6v3"/></svg>
+                                Erase account now
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                #endfor
+            </tbody>
+        </table>
+    </div>
+    #else:
+    <p class="px-5 py-10 text-center text-sm text-slate-400">No pending deletion requests.</p>
+    #endif
+</div>
+<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <h2 class="border-b border-slate-200 px-5 py-3 text-[15px] font-semibold text-slate-900">Data export requests</h2>
+    #if(hasExports):
+    <table class="min-w-full text-sm">
+        <tbody class="divide-y divide-slate-100">
+            #for(request in exports):
+            <tr class="odd:bg-white even:bg-slate-50/70" data-admin-export-row>
+                <td class="px-5 py-3"><a href="#(request.userURL)" class="font-semibold text-slate-900 hover:text-teal-700">#(request.displayName)</a> <span class="text-xs text-slate-500">#(request.email)</span></td>
+                <td class="px-4 py-3 text-slate-500">#(request.requestedOn)</td>
+                <td class="px-5 py-3 text-right">
+                    <form method="post" action="#(request.processURL)" hx-post="#(request.processURL)">
+                        <button type="submit" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Mark processed</button>
+                    </form>
+                </td>
+            </tr>
+            #endfor
+        </tbody>
+    </table>
+    #else:
+    <p class="px-5 py-10 text-center text-sm text-slate-400">No pending export requests. Exports download straight away from the account page, so this is normally empty.</p>
+    #endif
+</div>
+#endexport
+#endextend

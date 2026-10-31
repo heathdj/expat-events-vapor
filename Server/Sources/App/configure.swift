@@ -17,6 +17,7 @@ public func configure(_ app: Application) async throws {
 
     app.views.use(.leaf)
     app.leaf.tags["eventDate"] = EventDateTag()
+    app.leaf.tags["adminNavLink"] = AdminNavLinkTag()
     app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
 
     registerMigrations(app)
@@ -136,4 +137,6 @@ private func registerCommands(_ app: Application) {
     // scheduled job / cron runs both daily. See each command's doc comment.
     app.commands.use(ProcessDeletionsCommand(), as: "process-deletions")
     app.commands.use(RetentionCleanupCommand(), as: "retention-cleanup")
+    // M10: grant or revoke admin access (how the first admin is made).
+    app.commands.use(MakeAdminCommand(), as: "make-admin")
 }

@@ -1,0 +1,93 @@
+#extend("admin/layout"):
+#export("body"):
+<div class="mb-6">
+    <div class="text-xs font-medium text-slate-400">Admin › #(chrome.section)</div>
+    <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">Groups</h1>
+</div>
+<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    #if(isEmpty):
+    <p class="px-4 py-12 text-center text-sm text-slate-400">No groups yet.</p>
+    #else:
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <tr>
+                    <th scope="col" class="px-4 py-3">Group</th>
+                    <th scope="col" class="px-4 py-3">Owner</th>
+                    <th scope="col" class="px-4 py-3 text-right">Members</th>
+                    <th scope="col" class="px-4 py-3">Created</th>
+                    <th scope="col" class="px-4 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                #for(group in groups):
+                <tr class="odd:bg-white even:bg-slate-50/70 hover:bg-teal-50/60" data-admin-group-row x-data="{ transfer: false }">
+                    <td class="whitespace-nowrap px-4 py-3">
+                        <div class="flex items-center gap-3">
+                            <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg #(group.avatarColor) text-xs font-bold text-white">#(group.initials)</span>
+                            <div>
+                                <a href="#(group.url)" class="font-semibold text-slate-900 hover:text-teal-700">#(group.name)</a>
+                                <div><span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset #(group.visibility.classes)">#(group.visibility.label)</span></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-3">
+                        <a href="#(group.ownerURL)" class="font-medium text-slate-800 hover:text-teal-700">#(group.ownerName)</a>
+                        <div class="text-xs text-slate-500">#(group.ownerEmail)</div>
+                        #if(group.ownerErased):
+                        <span class="mt-1 inline-flex rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 ring-1 ring-inset ring-rose-600/25">Owner account erased</span>
+                        #endif
+                        #if(group.ownerLapsed):
+                        <span class="mt-1 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/25">Owner not on Premium</span>
+                        #endif
+                    </td>
+                    <td class="px-4 py-3 text-right tabular-nums text-slate-700">#(group.memberCount)</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-slate-500">#(group.createdOn)</td>
+                    <td class="whitespace-nowrap px-4 py-3">
+                        <div class="flex justify-end gap-1.5">
+                            <a href="#(group.url)" title="View group" aria-label="View group" class="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </a>
+                            <button type="button" @click="transfer = true" title="Transfer ownership" aria-label="Transfer ownership" class="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h12l-3-3M17 17H5l3 3"/></svg>
+                            </button>
+                        </div>
+                        <div x-cloak x-show="transfer" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4" @keydown.escape.window="transfer = false">
+                            <div class="w-full max-w-md whitespace-normal rounded-2xl bg-white p-6 text-left shadow-2xl" @click.outside="transfer = false" role="dialog" aria-modal="true" aria-labelledby="transfer-title-#(group.id)">
+                                <h2 id="transfer-title-#(group.id)" class="text-base font-semibold text-slate-900">Transfer ownership of #(group.name)</h2>
+                                <p class="mt-1 text-sm text-slate-600">The new owner needs a Premium plan and can't own another group. The current owner stays in the group as a regular member.</p>
+                                <form class="mt-4" method="post" action="#(group.transferURL)" hx-post="#(group.transferURL)" @htmx:after-request.camel="transfer = false">
+                                    <label class="mb-1 block text-sm font-medium text-slate-700" for="owner-#(group.id)">New owner's email</label>
+                                    <input id="owner-#(group.id)" type="email" name="newOwnerEmail" required placeholder="name@example.com"
+                                           class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20">
+                                    <div class="mt-5 flex justify-end gap-2">
+                                        <button type="button" @click="transfer = false" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                                        <button type="submit" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700">Transfer</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                #endfor
+            </tbody>
+        </table>
+    </div>
+    #endif
+    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
+        <span>#(pager.showing)</span>
+        #if(pager.hasPages):
+        <div class="flex items-center gap-2">
+            #if(pager.previousURL):
+            <a href="#(pager.previousURL)" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50">Previous</a>
+            #endif
+            <span>#(pager.pageLabel)</span>
+            #if(pager.nextURL):
+            <a href="#(pager.nextURL)" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50">Next</a>
+            #endif
+        </div>
+        #endif
+    </div>
+</div>
+#endexport
+#endextend
