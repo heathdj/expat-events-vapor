@@ -30,7 +30,7 @@ expatevents-mvp/
       Middleware/              Admin gating, API error shaping, session/suspension checks
       Services/                Business logic shared by Web and API controllers
       WebSockets/              (not yet built — M5)
-      Commands/                Dev seeding, plus the M9 process-deletions / retention-cleanup jobs
+      Commands/                Dev seeding, the M9 process-deletions / retention-cleanup jobs, and M10 make-admin
     Resources/Views/           Leaf templates
     Public/                    Static assets (Tailwind/htmx/Alpine — currently CDN-loaded, see note below)
     docker-compose.yml         Local Postgres for development
@@ -60,7 +60,7 @@ expatevents-mvp/
    ```sh
    swift build
    swift run App migrate --yes   # creates every table from Migrations/
-   swift run App seed            # 4 users, 2 groups, 3 events — see Commands/SeedCommand.swift
+   swift run App seed            # 5 users, 2 groups, 3 events — see Commands/SeedCommand.swift
    swift run App serve           # starts the server on http://localhost:8080
    ```
    City and venue suggestions on the create-event form come from Google in development: set `GOOGLE_MAPS_API_KEY` in `Server/.env` (a key with **Places API (New)** enabled; see `.env.example`). Without it the form falls back to a few built-in sample places (Lisbon, Madrid, Berlin, Mexico City, Bangkok). Time zones are worked out offline from coordinates with [`tzf-swift`](https://github.com/ringsaturn/tzf-swift).
@@ -69,6 +69,12 @@ expatevents-mvp/
    ```sh
    swift run App process-deletions   # erases accounts with a pending "Delete account" request
    swift run App retention-cleanup   # deletes past/cancelled events (and their chat) older than 30 days
+   ```
+
+   The admin site is at `/admin` (M10). Only admins can open it; the seed makes the `heathdj@gmail.com` account one. Anywhere else (including production), make the first admin from the command line once that account has signed in:
+   ```sh
+   swift run App make-admin someone@example.com            # grant admin access
+   swift run App make-admin someone@example.com --revoke   # remove it (refused for the last admin)
    ```
 4. Check it's alive:
    ```sh
