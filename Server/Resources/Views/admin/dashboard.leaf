@@ -1,0 +1,133 @@
+#extend("admin/layout"):
+#export("body"):
+<div class="mb-6">
+    <div class="text-xs font-medium text-slate-400">Admin › #(chrome.section)</div>
+    <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">Dashboard</h1>
+</div>
+
+<div class="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <a href="/admin/users" class="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-teal-300">
+        <div class="flex items-center justify-between text-[13px] font-semibold text-slate-500">Accounts
+            <span class="grid h-8 w-8 place-items-center rounded-lg bg-teal-50 text-teal-600"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.2-6 8-6s7 2 8 6"/></svg></span>
+        </div>
+        <div class="mt-2 text-3xl font-bold tracking-tight text-slate-900"><span data-stat="users">#(users)</span></div>
+        <div class="mt-1 text-xs">
+            #if(accounts.deltaUp):
+            <span class="font-semibold text-emerald-600">#(accounts.delta)</span>
+            #endif
+            #if(accounts.deltaDown):
+            <span class="font-semibold text-rose-600">#(accounts.delta)</span>
+            #endif
+            <span class="text-slate-500">#(accounts.caption)</span>
+        </div>
+        <svg viewBox="0 0 120 28" preserveAspectRatio="none" class="mt-3 h-7 w-full" aria-hidden="true"><polyline points="#(accounts.sparkline)" fill="none" class="stroke-teal-500" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>
+    </a>
+    <a href="/admin/billing" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-amber-300">
+        <div class="flex items-center justify-between text-[13px] font-semibold text-slate-500">Premium members
+            <span class="grid h-8 w-8 place-items-center rounded-lg bg-amber-50 text-amber-500"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg></span>
+        </div>
+        <div class="mt-2 text-3xl font-bold tracking-tight text-slate-900"><span data-stat="premium">#(premiumCount)</span></div>
+        <div class="mt-1 text-xs text-slate-500">#(premium.caption)</div>
+        <div class="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden="true"><div class="h-full rounded-full bg-amber-400" style="width: #(premiumShare)"></div></div>
+        <div class="mt-1.5 text-[11px] text-slate-400">#(premiumShare) of accounts</div>
+    </a>
+    <a href="/admin/events?filter=upcoming" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-violet-300">
+        <div class="flex items-center justify-between text-[13px] font-semibold text-slate-500">Events in the next 7 days
+            <span class="grid h-8 w-8 place-items-center rounded-lg bg-violet-50 text-violet-600"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18"/></svg></span>
+        </div>
+        <div class="mt-2 text-3xl font-bold tracking-tight text-slate-900"><span data-stat="events-this-week">#(events.value)</span></div>
+        <div class="mt-1 text-xs">
+            #if(events.deltaUp):
+            <span class="font-semibold text-emerald-600">#(events.delta)</span>
+            #endif
+            #if(events.deltaDown):
+            <span class="font-semibold text-rose-600">#(events.delta)</span>
+            #endif
+            <span class="text-slate-500">#(events.caption)</span>
+        </div>
+        <svg viewBox="0 0 120 28" preserveAspectRatio="none" class="mt-3 h-7 w-full" aria-hidden="true"><polyline points="#(events.sparkline)" fill="none" class="stroke-violet-500" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>
+    </a>
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex items-center justify-between text-[13px] font-semibold text-slate-500">Monthly revenue
+            <span class="grid h-8 w-8 place-items-center rounded-lg bg-emerald-50 text-emerald-600"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v18M16.5 7.5c-.6-1.5-2.3-2.5-4.5-2.5-2.5 0-4.5 1.4-4.5 3.4 0 4.6 9 2.4 9 7 0 2-2 3.6-4.5 3.6-2.3 0-4.1-1.1-4.7-2.8"/></svg></span>
+        </div>
+        <div class="mt-2 text-3xl font-bold tracking-tight text-slate-300">—</div>
+        <div class="mt-1 text-xs text-slate-500">Shows once billing (M8) is built.</div>
+    </div>
+</div>
+
+<div class="mb-5 grid grid-cols-1 gap-5 xl:grid-cols-3">
+    <div class="xl:col-span-2">
+        #extend("admin/activity-chart")
+    </div>
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="mb-2 flex items-center justify-between">
+            <h2 class="text-[15px] font-semibold text-slate-900">Plans</h2>
+            <span class="text-xs text-slate-400">#(free) free · #(paid) paid · #(comped) comped</span>
+        </div>
+        <svg viewBox="0 0 200 200" class="mx-auto my-2 h-44 w-44" role="img" aria-label="Plan split: #(free) free, #(paid) paid Premium, #(comped) comped Premium">
+            <circle cx="100" cy="100" r="70" fill="none" class="stroke-slate-100" stroke-width="26"/>
+            #for(segment in donut):
+            <circle cx="100" cy="100" r="70" fill="none" class="#(segment.colorClass)" stroke="currentColor" stroke-width="26"
+                    stroke-dasharray="#(segment.dashArray)" stroke-dashoffset="#(segment.dashOffset)" transform="rotate(-90 100 100)"/>
+            #endfor
+            <text x="100" y="98" text-anchor="middle" font-size="26" font-weight="700" class="fill-slate-900">#(premiumShare)</text>
+            <text x="100" y="118" text-anchor="middle" font-size="11.5" class="fill-slate-400">on Premium</text>
+        </svg>
+        <div class="flex justify-center gap-4 text-xs text-slate-500">
+            <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-teal-600"></span>Free</span>
+            <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-amber-500"></span>Paid</span>
+            <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-violet-500"></span>Comped</span>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 gap-5 xl:grid-cols-3">
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
+        <div class="mb-3 flex items-center justify-between">
+            <h2 class="text-[15px] font-semibold text-slate-900">Events by category <span class="font-normal text-slate-400">· next 30 days</span></h2>
+            <a href="/admin/events?filter=upcoming" class="text-xs font-semibold text-teal-700 hover:underline">All upcoming</a>
+        </div>
+        #if(hasCategories):
+        <svg viewBox="0 0 560 #(categoriesHeight)" class="h-auto w-full" role="img" aria-label="Upcoming events by category">
+            #for(bar in categories):
+            <text x="0" y="#(bar.labelY)" font-size="12" class="fill-slate-500">#(bar.label)</text>
+            <rect x="96" y="#(bar.y)" width="#(bar.width)" height="16" rx="5" class="fill-teal-600" fill-opacity="#(bar.opacity)"><title>#(bar.label) · #(bar.count) events</title></rect>
+            <text x="#(bar.valueX)" y="#(bar.labelY)" font-size="12" font-weight="700" class="fill-slate-800">#(bar.count)</text>
+            #endfor
+        </svg>
+        #else:
+        <p class="py-10 text-center text-sm text-slate-400">No upcoming events in the next 30 days.</p>
+        #endif
+    </div>
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 class="text-[15px] font-semibold text-slate-900">Needs attention</h2>
+        <div class="mt-3 grid grid-cols-3 gap-2 text-center">
+            <a href="/admin/data-requests" class="rounded-xl bg-rose-50 px-2 py-2.5"><div class="text-lg font-bold text-rose-700"><span data-stat="pending-deletions">#(pendingDeletions)</span></div><div class="text-[11px] text-rose-700/80">Deletions</div></a>
+            <a href="/admin/users?filter=suspended" class="rounded-xl bg-slate-100 px-2 py-2.5"><div class="text-lg font-bold text-slate-700"><span data-stat="suspended">#(suspended)</span></div><div class="text-[11px] text-slate-500">Suspended</div></a>
+            <a href="/admin/groups" class="rounded-xl bg-amber-50 px-2 py-2.5"><div class="text-lg font-bold text-amber-700"><span data-stat="groups-needing-owner">#(groupsNeedingOwner)</span></div><div class="text-[11px] text-amber-700/80">Need an owner</div></a>
+        </div>
+        #if(hasAttention):
+        <ul class="mt-3 divide-y divide-slate-100">
+            #for(item in attention):
+            <li class="flex items-start gap-3 py-3">
+                #if(item.isUrgent):
+                <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-rose-500"></span>
+                #else:
+                <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-400"></span>
+                #endif
+                <div class="min-w-0 flex-1">
+                    <div class="truncate text-sm font-semibold text-slate-800">#(item.title)</div>
+                    <div class="text-xs text-slate-500">#(item.detail)</div>
+                </div>
+                <a href="#(item.url)" class="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50">#(item.actionLabel)</a>
+            </li>
+            #endfor
+        </ul>
+        #else:
+        <p class="mt-4 rounded-xl bg-emerald-50 px-3 py-3 text-sm text-emerald-700">All clear. Nothing is waiting on an admin.</p>
+        #endif
+    </div>
+</div>
+#endexport
+#endextend

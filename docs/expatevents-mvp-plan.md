@@ -162,6 +162,8 @@ Work strictly from the acceptance criteria below, milestone by milestone — don
 5. Data requests: shows pending `DeletionRequest`/`DataExportRequest` rows and can mark them processed.
 6. Every action above writes exactly one correct `AdminAuditLog` row (right admin, action, target) — not zero, not duplicates.
 
+**Decisions made at the start of M10 (user, via AskUserQuestion)**: the first admin is made with `swift run App make-admin <email>` (the dev seed also makes the tester's account an admin); this milestone builds the web admin only, and the `/api/v1/admin` JSON routes plus the `ExpatEventsAdminAPI` package move to M11; Billing is a read-only placeholder (plan counts, comped accounts) until M8; Data requests' "Erase account now" runs the same erasure as `process-deletions` for that one account.
+
 ### M11 — JSON API (`/api/v1`) + shared Swift package
 **Deliverables**: the full public `/api/v1` surface from the architecture doc (everything except `/admin`), sharing the same service layer as the web controllers; the `ExpatEventsAPI` package (DTOs, enums, `ChatEnvelope`) checked into `/Packages/ExpatEventsAPI`, consumed by `/Server` via a local path dependency.
 

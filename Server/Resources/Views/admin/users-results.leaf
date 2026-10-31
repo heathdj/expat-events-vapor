@@ -1,0 +1,107 @@
+<input type="hidden" name="filter" value="#(filter)" form="none">
+<div class="flex flex-wrap gap-2 border-b border-slate-200 px-4 py-3">
+    #for(chip in chips):
+    #if(chip.isActive):
+    <a href="#(chip.url)" aria-current="true" class="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">#(chip.label) <span class="ml-1 opacity-60">#(chip.count)</span></a>
+    #else:
+    <a href="#(chip.url)" hx-get="#(chip.fragmentURL)" hx-target="\#admin-users-results" hx-push-url="#(chip.url)" hx-sync="\#admin-users-results:replace"
+       class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">#(chip.label) <span class="ml-1 opacity-60">#(chip.count)</span></a>
+    #endif
+    #endfor
+</div>
+#if(isEmpty):
+<p class="px-4 py-12 text-center text-sm text-slate-400">No accounts match.</p>
+#else:
+<div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <tr>
+                <th scope="col" class="px-4 py-3">Account</th>
+                <th scope="col" class="px-4 py-3">Plan</th>
+                <th scope="col" class="px-4 py-3">Status</th>
+                <th scope="col" class="px-4 py-3 text-right">Events</th>
+                <th scope="col" class="px-4 py-3">Joined</th>
+                <th scope="col" class="px-4 py-3 text-right">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+            #for(user in users):
+            <tr class="odd:bg-white even:bg-slate-50/70 hover:bg-teal-50/60" data-admin-user-row>
+                <td class="whitespace-nowrap px-4 py-3">
+                    <a href="#(user.detailURL)" class="flex items-center gap-3">
+                        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full #(user.avatarColor) text-xs font-bold text-white">#(user.initials)</span>
+                        <span class="min-w-0">
+                            <span class="block font-semibold text-slate-900 hover:text-teal-700">#(user.displayName)</span>
+                            <span class="block text-xs text-slate-500">#(user.email)</span>
+                        </span>
+                    </a>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3"><span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset #(user.plan.classes)">#(user.plan.label)</span></td>
+                <td class="whitespace-nowrap px-4 py-3">
+                    #for(status in user.statuses):
+                    <span class="mr-1 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset #(status.classes)">#(status.label)</span>
+                    #endfor
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-700">#(user.hostedEvents)</td>
+                <td class="whitespace-nowrap px-4 py-3 text-slate-500">#(user.joinedOn)</td>
+                <td class="whitespace-nowrap px-4 py-3">
+                    <div class="flex justify-end gap-1.5">
+                        <a href="#(user.detailURL)" title="View account" aria-label="View account: #(user.displayName)" class="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900">
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </a>
+                        #if(user.canComp):
+                        <form method="post" action="#(user.planURL)" hx-post="#(user.planURL)">
+                            <input type="hidden" name="plan" value="premium"><input type="hidden" name="returnTo" value="#(returnURL)">
+                            <button type="submit" title="Comp Premium" aria-label="Comp Premium: #(user.displayName)" class="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-600">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg>
+                            </button>
+                        </form>
+                        #endif
+                        #if(user.canRevertToFree):
+                        <form method="post" action="#(user.planURL)" hx-post="#(user.planURL)"
+                              hx-confirm="Move this account to the Free plan? Premium-only features stop for them straight away, and a group they own stays theirs.">
+                            <input type="hidden" name="plan" value="free"><input type="hidden" name="returnTo" value="#(returnURL)">
+                            <button type="submit" title="Return to Free" aria-label="Return to Free: #(user.displayName)" class="grid h-8 w-8 place-items-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 hover:bg-amber-100">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5"><path d="m12 3 2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg>
+                            </button>
+                        </form>
+                        #endif
+                        #if(user.canSuspend):
+                        <form method="post" action="#(user.suspendURL)" hx-post="#(user.suspendURL)"
+                              hx-confirm="Suspend this account? They are signed out of the website and can't sign in until restored.">
+                            <input type="hidden" name="returnTo" value="#(returnURL)">
+                            <button type="submit" title="Suspend" aria-label="Suspend #(user.displayName)" class="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>
+                            </button>
+                        </form>
+                        #endif
+                        #if(user.canUnsuspend):
+                        <form method="post" action="#(user.unsuspendURL)" hx-post="#(user.unsuspendURL)">
+                            <input type="hidden" name="returnTo" value="#(returnURL)">
+                            <button type="submit" title="Restore account" aria-label="Restore account: #(user.displayName)" class="grid h-8 w-8 place-items-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+                            </button>
+                        </form>
+                        #endif
+                    </div>
+                </td>
+            </tr>
+            #endfor
+        </tbody>
+    </table>
+</div>
+#endif
+<div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
+    <span>#(pager.showing)</span>
+    #if(pager.hasPages):
+    <div class="flex items-center gap-2">
+        #if(pager.previousURL):
+        <a href="#(pager.previousURL)" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50">Previous</a>
+        #endif
+        <span>#(pager.pageLabel)</span>
+        #if(pager.nextURL):
+        <a href="#(pager.nextURL)" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50">Next</a>
+        #endif
+    </div>
+    #endif
+</div>

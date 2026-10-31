@@ -1,0 +1,150 @@
+#extend("admin/layout"):
+#export("body"):
+<div class="mb-6 flex flex-wrap items-center gap-4">
+    <a href="/admin/users" class="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" aria-label="All accounts">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg>
+    </a>
+    <span class="grid h-12 w-12 shrink-0 place-items-center rounded-full #(avatarColor) text-sm font-bold text-white">#(initials)</span>
+    <div class="min-w-0">
+        <div class="text-xs font-medium text-slate-400">Admin › #(chrome.section)</div>
+        <h1 class="truncate text-2xl font-bold tracking-tight text-slate-900">#(displayName)</h1>
+    </div>
+    <div class="flex flex-wrap gap-1.5">
+        <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset #(plan.classes)">#(plan.label)</span>
+        #for(status in statuses):
+        <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset #(status.classes)">#(status.label)</span>
+        #endfor
+    </div>
+</div>
+
+#if(isSuspended):
+<div class="mb-5 flex items-start gap-3 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="status" data-suspended-banner>
+    <svg class="mt-0.5 h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>
+    <div><strong class="font-semibold">This account is suspended.</strong> It can't sign in or use the site until you restore it.</div>
+</div>
+#endif
+#if(isErased):
+<div class="mb-5 rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-sm text-slate-700" role="status">This account was erased at the owner's request. Nothing about it can be changed.</div>
+#endif
+
+<div class="mb-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 class="mb-3 text-[15px] font-semibold text-slate-900">Account</h2>
+        <dl class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
+            <dt class="text-slate-500">Email</dt><dd class="truncate text-slate-900">#(email)</dd>
+            <dt class="text-slate-500">Joined</dt><dd class="text-slate-900">#(joinedOn)</dd>
+            <dt class="text-slate-500">Hosted events</dt><dd class="text-slate-900">#(hostedEventCount)</dd>
+            <dt class="text-slate-500">Groups</dt><dd class="text-slate-900">#(groupCount)</dd>
+            <dt class="text-slate-500">ID</dt><dd class="truncate font-mono text-xs text-slate-500">#(userID)</dd>
+        </dl>
+        #if(!isErased):
+        <a href="#(profileURL)" class="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-teal-700 hover:underline">Public profile
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
+        </a>
+        #endif
+    </div>
+
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+        <h2 class="mb-3 text-[15px] font-semibold text-slate-900">Actions</h2>
+        #if(isSelf):
+        <p class="mb-3 text-sm text-slate-500">This is your own account, so it can't be suspended here.</p>
+        #endif
+        <div class="flex flex-wrap gap-2">
+            #if(canComp):
+            <form method="post" action="/admin/users/#(userID)/plan" hx-post="/admin/users/#(userID)/plan">
+                <input type="hidden" name="plan" value="premium">
+                <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg>
+                    Comp Premium
+                </button>
+            </form>
+            #endif
+            #if(canRevertToFree):
+            <form method="post" action="/admin/users/#(userID)/plan" hx-post="/admin/users/#(userID)/plan"
+                  hx-confirm="Move this account to the Free plan? Premium-only features stop for them straight away, and a group they own stays theirs.">
+                <input type="hidden" name="plan" value="free">
+                <button type="submit" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Return to Free</button>
+            </form>
+            #endif
+            #if(canSuspend):
+            <form method="post" action="/admin/users/#(userID)/suspend" hx-post="/admin/users/#(userID)/suspend"
+                  hx-confirm="Suspend this account? They are signed out of the website and can't sign in until restored.">
+                <button type="submit" class="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3.5 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>
+                    Suspend account
+                </button>
+            </form>
+            #endif
+            #if(canUnsuspend):
+            <form method="post" action="/admin/users/#(userID)/unsuspend" hx-post="/admin/users/#(userID)/unsuspend">
+                <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+                    Restore account
+                </button>
+            </form>
+            #endif
+        </div>
+        #if(paysThroughStripe):
+        <p class="mt-3 text-sm text-slate-500">This account pays for Premium, so its plan is changed in Stripe, not here.</p>
+        #endif
+
+        <h3 class="mb-2 mt-6 text-xs font-semibold uppercase tracking-wider text-slate-400">Admin history</h3>
+        #if(hasHistory):
+        <ul class="divide-y divide-slate-100 text-sm">
+            #for(entry in history):
+            <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                <span class="inline-flex rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold ring-1 ring-inset #(entry.action.classes)">#(entry.action.label)</span>
+                <span class="text-slate-500">by #(entry.adminName)</span>
+                <span class="text-xs text-slate-400">#(entry.details)</span>
+                <span class="ml-auto text-xs text-slate-400">#(entry.when)</span>
+            </li>
+            #endfor
+        </ul>
+        #else:
+        <p class="text-sm text-slate-400">No admin actions on this account yet.</p>
+        #endif
+    </div>
+</div>
+
+<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+    <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <h2 class="border-b border-slate-200 px-5 py-3 text-[15px] font-semibold text-slate-900">Hosted events</h2>
+        #if(hasHostedEvents):
+        <table class="min-w-full text-sm">
+            <thead class="sr-only"><tr><th scope="col">Event</th><th scope="col">Date</th><th scope="col">Going</th><th scope="col">Status</th></tr></thead>
+            <tbody class="divide-y divide-slate-100">
+                #for(event in hostedEvents):
+                <tr class="odd:bg-white even:bg-slate-50/70">
+                    <td class="px-5 py-2.5"><a href="#(event.url)" class="font-semibold text-slate-900 hover:text-teal-700">#(event.title)</a></td>
+                    <td class="whitespace-nowrap px-3 py-2.5 text-slate-500">#eventDate(event.date, "short", event.timeZone)</td>
+                    <td class="px-3 py-2.5 text-right tabular-nums text-slate-500">#(event.attendees)</td>
+                    <td class="px-5 py-2.5 text-right"><span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset #(event.status.classes)">#(event.status.label)</span></td>
+                </tr>
+                #endfor
+            </tbody>
+        </table>
+        #else:
+        <p class="px-5 py-8 text-center text-sm text-slate-400">No hosted events.</p>
+        #endif
+    </div>
+    <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <h2 class="border-b border-slate-200 px-5 py-3 text-[15px] font-semibold text-slate-900">Groups</h2>
+        #if(hasGroups):
+        <table class="min-w-full text-sm">
+            <thead class="sr-only"><tr><th scope="col">Group</th><th scope="col">Role</th></tr></thead>
+            <tbody class="divide-y divide-slate-100">
+                #for(group in groups):
+                <tr class="odd:bg-white even:bg-slate-50/70">
+                    <td class="px-5 py-2.5"><a href="#(group.url)" class="font-semibold text-slate-900 hover:text-teal-700">#(group.name)</a></td>
+                    <td class="px-5 py-2.5 text-right"><span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset #(group.role.classes)">#(group.role.label)</span></td>
+                </tr>
+                #endfor
+            </tbody>
+        </table>
+        #else:
+        <p class="px-5 py-8 text-center text-sm text-slate-400">Not in any groups.</p>
+        #endif
+    </div>
+</div>
+#endexport
+#endextend

@@ -138,7 +138,7 @@ Not design items, listed here so the audit is complete in one place.
 | M7 | No notifications for new follows or feed items |
 | M8 | Billing: skipped for now. When built, also erase Stripe data on account deletion, and finish the Account page |
 | M9 | **Launch blocker**: real Privacy Policy and Terms wording. No re-consent prompt when they change. `process-deletions` and `retention-cleanup` aren't scheduled. A deleted user who owns a group stays its owner |
-| M10 | Admin site: not started (it should also process deletion requests and transfer group ownership) |
+| M10 | Admin site: built (web only; the `/api/v1/admin` JSON surface moved to M11). No admin artboard exists in the design canvas, so its styling is extrapolated from the tokens. Billing is a placeholder until M8. |
 | M11 | JSON API: no account, billing or admin endpoints yet |
 | M12 | i18n: not started |
 | M13 | Deployment: not started |

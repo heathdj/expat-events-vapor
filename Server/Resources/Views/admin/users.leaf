@@ -1,0 +1,25 @@
+#extend("admin/layout"):
+#export("body"):
+<div class="mb-6">
+    <div class="text-xs font-medium text-slate-400">Admin › #(chrome.section)</div>
+    <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">Users</h1>
+</div>
+<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <form class="flex flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3" method="get" action="/admin/users" role="search"
+          hx-get="/admin/users/table" hx-target="\#admin-users-results" hx-include="[name='filter']" hx-sync="\#admin-users-results:replace">
+        <label class="relative block w-full sm:w-80">
+            <span class="sr-only">Search accounts</span>
+            <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" name="q" value="#(query)" maxlength="100" placeholder="Search name or email" autocomplete="off"
+                   class="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                   hx-get="/admin/users/table" hx-trigger="input changed delay:300ms, search" hx-target="\#admin-users-results"
+                   hx-include="[name='filter']" hx-sync="\#admin-users-results:replace">
+        </label>
+        <noscript><button type="submit" class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Search</button></noscript>
+    </form>
+    <div id="admin-users-results">
+#extend("admin/users-results")
+    </div>
+</div>
+#endexport
+#endextend

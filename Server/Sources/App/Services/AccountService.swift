@@ -144,10 +144,13 @@ struct AccountService {
         let pending = try await DeletionRequest.query(on: db)
             .filter(\.$processedAt == nil)
             .all()
+        var processed = 0
         for request in pending {
-            try await process(request, now: now)
+            if try await process(request, now: now) {
+                processed += 1
+            }
         }
-        return pending.count
+        return processed
     }
 
     /// Erases one account, in a single transaction so a failure part-way
@@ -173,10 +176,20 @@ struct AccountService {
     /// Known gap, tracked in MILESTONES.md: a group they *own* stays
     /// owned by the tombstone -- `groups.owner_id` is `ON DELETE
     /// RESTRICT` and ownership transfer is M10's admin feature.
-    func process(_ request: DeletionRequest, now: Date = Date()) async throws {
+    ///
+    /// Returns false, changing nothing, if the request was already
+    /// processed: the request row is locked first, so this command and the
+    /// admin site's "Erase account now" (M10) can't both erase one account.
+    @discardableResult
+    func process(_ request: DeletionRequest, now: Date = Date()) async throws -> Bool {
         let userID = request.$user.id
-        try await db.transaction { tx in
-            guard let user = try await User.find(userID, on: tx) else { return }
+        let requestID = try request.requireID()
+        return try await db.transaction { tx in
+            try await tx.lockRow(DeletionRequest.schema, id: requestID)
+            guard let current = try await DeletionRequest.find(requestID, on: tx), current.processedAt == nil else {
+                return false
+            }
+            guard let user = try await User.find(userID, on: tx) else { return false }
 
             user.displayName = Self.erasedDisplayName
             user.email = "erased-\(userID.uuidString.lowercased())@erased.invalid"
@@ -187,19 +200,10 @@ struct AccountService {
             try await OAuthIdentity.query(on: tx).filter(\.$user.$id == userID).delete()
             try await PasskeyCredential.query(on: tx).filter(\.$user.$id == userID).delete()
 
-            // Vapor's ModelSessionAuthenticatable stores the signed-in
-            // user under "_UserSession" in each session's JSON data.
             // (`ActiveUserSessionAuthenticator` also refuses an erased user,
             // so a session created by a sign-in racing this transaction is
-            // inert too.) Throws rather than silently skipping if the
-            // database ever isn't SQL-backed.
-            guard let sql = tx as? SQLDatabase else {
-                throw Abort(.internalServerError, reason: "Session purge requires a SQL database.")
-            }
-            try await sql.raw("""
-            DELETE FROM \(unsafeRaw: SessionRecord.schema)
-            WHERE data->>'_UserSession' = \(bind: userID.uuidString)
-            """).run()
+            // inert too.)
+            try await tx.deleteWebSessions(for: userID)
 
             try await Invoice.query(on: tx)
                 .filter(\.$user.$id == userID)
@@ -231,8 +235,10 @@ struct AccountService {
                 .set(\.$user.$id, to: nil)
                 .update()
 
+            current.processedAt = now
+            try await current.save(on: tx)
             request.processedAt = now
-            try await request.save(on: tx)
+            return true
         }
     }
 }

@@ -4,7 +4,21 @@
     <h1 class="text-xl font-semibold mb-2">Sign in to ExpatEvents</h1>
     <p class="text-sm text-gray-500 mb-6">No password needed — sign in with Apple or Google.</p>
 
-    <div id="auth-error" class="hidden text-sm text-red-600 mb-4"></div>
+    <div id="auth-error" class="hidden text-sm text-red-600 mb-4" role="alert"></div>
+    <script>
+        // M10: show the server's reason (e.g. a suspended account) when
+        // it gives one. textContent, so the message is never parsed as HTML.
+        async function showAuthError(res) {
+            let message = 'Sign-in failed.';
+            try {
+                const body = await res.json();
+                if (body && body.reason) { message = body.reason; }
+            } catch (e) {}
+            const box = document.getElementById('auth-error');
+            box.textContent = message;
+            box.classList.remove('hidden');
+        }
+    </script>
 
     #if(appleClientID):
     <!-- Sign in with Apple JS SDK — see https://developer.apple.com/documentation/sign_in_with_apple/sign_in_with_apple_js -->
@@ -19,7 +33,7 @@
                 body: JSON.stringify({ identityToken })
             });
             if (res.redirected) { window.location = res.url; }
-            else { document.getElementById('auth-error').textContent = 'Sign-in failed.'; document.getElementById('auth-error').classList.remove('hidden'); }
+            else { showAuthError(res); }
         });
         window.AppleID && window.AppleID.auth.init({
             clientId: '#(appleClientID)',
@@ -46,7 +60,7 @@
                 body: JSON.stringify({ idToken: response.credential })
             });
             if (res.redirected) { window.location = res.url; }
-            else { document.getElementById('auth-error').textContent = 'Sign-in failed.'; document.getElementById('auth-error').classList.remove('hidden'); }
+            else { showAuthError(res); }
         }
     </script>
     #endif

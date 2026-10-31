@@ -1,0 +1,62 @@
+#extend("admin/layout"):
+#export("body"):
+<div class="mb-6">
+    <div class="text-xs font-medium text-slate-400">Admin › #(chrome.section)</div>
+    <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">Audit log</h1>
+    <p class="mt-1 text-sm text-slate-500">Every admin action, newest first. Entries hold IDs only, never names or emails.</p>
+</div>
+<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    #if(isEmpty):
+    <p class="px-4 py-12 text-center text-sm text-slate-400">No admin actions yet.</p>
+    #else:
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <tr>
+                    <th scope="col" class="px-4 py-3">When</th>
+                    <th scope="col" class="px-4 py-3">Admin</th>
+                    <th scope="col" class="px-4 py-3">Action</th>
+                    <th scope="col" class="px-4 py-3">Target</th>
+                    <th scope="col" class="px-4 py-3">Details</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                #for(row in rows):
+                <tr class="odd:bg-white even:bg-slate-50/70" data-audit-row>
+                    <td class="whitespace-nowrap px-4 py-3 text-slate-500">#(row.when)</td>
+                    <td class="whitespace-nowrap px-4 py-3">
+                        <span class="inline-flex items-center gap-2"><span class="grid h-7 w-7 place-items-center rounded-full bg-brand text-[11px] font-bold text-white">#(row.adminInitials)</span>#(row.adminName)</span>
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-3"><span class="inline-flex rounded-full px-2.5 py-0.5 font-mono text-[11px] font-semibold ring-1 ring-inset #(row.action.classes)">#(row.action.label)</span></td>
+                    <td class="whitespace-nowrap px-4 py-3">
+                        #if(row.targetURL):
+                        <a href="#(row.targetURL)" class="font-medium capitalize text-teal-700 hover:underline">#(row.targetType)</a>
+                        #else:
+                        <span class="font-medium capitalize text-slate-700">#(row.targetType)</span>
+                        #endif
+                        <div class="font-mono text-[11px] text-slate-400">#(row.targetID)</div>
+                    </td>
+                    <td class="px-4 py-3 text-xs text-slate-500">#(row.details)</td>
+                </tr>
+                #endfor
+            </tbody>
+        </table>
+    </div>
+    #endif
+    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
+        <span>#(pager.showing)</span>
+        #if(pager.hasPages):
+        <div class="flex items-center gap-2">
+            #if(pager.previousURL):
+            <a href="#(pager.previousURL)" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50">Previous</a>
+            #endif
+            <span>#(pager.pageLabel)</span>
+            #if(pager.nextURL):
+            <a href="#(pager.nextURL)" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50">Next</a>
+            #endif
+        </div>
+        #endif
+    </div>
+</div>
+#endexport
+#endextend
