@@ -1,10 +1,41 @@
-# Design audit: what's built vs. the design (after M9)
+# Design audit: what's built vs. the design
 
-Audited 2026-10-25 against `main` at the PR #8 merge. Compares every screen against the design canvas's six artboards (`Main`, `Events`, `EventDetail`, `Groups`, `GroupEventForm`, `Account`, extracted directly from the canvas source, not from memory) and against the component patterns in `docs/design-system.md`. Design-visible gaps in behavior are included too, for example a form field the artboard shows but the website can't submit.
+First audited 2026-10-25 against `main` at the PR #8 merge (after M9); **re-audited 2026-10-31 against `main` at the PR #14 merge (after M10)**, see §0. The first audit Compares every screen against the design canvas's six artboards (`Main`, `Events`, `EventDetail`, `Groups`, `GroupEventForm`, `Account`, extracted directly from the canvas source, not from memory) and against the component patterns in `docs/design-system.md`. Design-visible gaps in behavior are included too, for example a form field the artboard shows but the website can't submit.
 
 **Update (event-basics PR, after this audit)**: the three behavior gaps found here are fixed. Event dates now show on the events list, event page, group page and profile; the create form works again (its date field was failing every submission) and has Host as, Public/Private and an attendee limit, with readable errors; and `/events` has "Load more events". The rows below are marked accordingly. Everything else in this audit is still open.
 
 Status key: ✅ built to the design · 🟡 partly built · ❌ not built (the page works but is still plain Tailwind, or the element is missing).
+
+## 0. Re-audit after M10, and the plan for the theme work
+
+**What changed since the first audit**: the event-basics PR (#10) fixed the three behavior gaps; the location PR (#13) added city/venue autocomplete, coordinates and per-event time zones; M10 (#14) built the admin site with its own theme (dark sidebar, Tailwind, server-drawn charts), chosen by the user from a mockup since the canvas has no admin artboard. **No public page's look changed**: every page except Home, Account, Feed, Profile, Feedback and the legal pages is still plain Tailwind under the plain white nav, exactly as in §1. Re-checked page by page against the canvas source (`Events`, `EventDetail`, `Groups`, `GroupEventForm`, `Account`); the §1 tables still hold, with the updates marked there.
+
+**New since the first audit (2026-10-31)**:
+
+- **The user supplied the real assets** (logo mark, default avatar, and one photo per category: culture, drinks, film, food, music, travel) and confirmed they're cleared for the live site. They replace the design tool's placeholder copies in `Server/Public/design/` (the new photos are larger, about 1,275×546 against the old 700×300; the default avatar is 450×450 against 160×160). This closes the "placeholder images aren't licensed" launch concern in §2.
+- **Profile photos are a new requirement**: a member's photo can be their Google photo, a Gravatar matching their email, or one they upload, falling back to the default avatar. Default order (user's decision): **Google photo, then Gravatar (if one exists), then uploaded, then the default**; on `/account` they can pick any one that's available. **Sign in with Apple never provides a photo** (only name and email), so Apple-only members get Gravatar, an upload or the default. Uploads are stored on local disk in development behind a small storage interface, with DigitalOcean Spaces plugged in at M13 (user's decision).
+- **What exists today for photos**: `User.photoURL` is in the model and every DTO that shows a person (attendees, chat, feed, follows, profile, account), and Account/Feed/Profile already fall back to the placeholder avatar. But nothing ever sets it at sign-in (Google's `picture` claim is ignored), there's no Gravatar, no upload and no choice. The dev seed sets `randomuser.me` URLs, which are third-party photos of real people and should become the default avatar or Gravatar instead.
+- **Admin site**: has its own theme now (§4, M10). Its sidebar logo is a text "EE" badge and should use the real logo mark too.
+
+**Decisions for the theme work** (resolving open questions from §2):
+
+- **Tailwind stays on the CDN for now**, with the canvas tokens added to `tailwind.config` (colors, radius, shadow, Outfit font) in the shared layout, as the admin layout already does; the compiled Tailwind build moves to M13, when there's a build step anyway.
+- **Icons stay inlined** (Leaf's `#` makes a `<use href="#icon">` sprite error-prone); a few shared icon partials can cut repetition.
+- **The nav's account dropdown uses Alpine** (already loaded on every page), not Flowbite, so no new library is added for one menu.
+- **Category photos** show on event cards, the event-detail hero and the create form's category picker. The canvas's category chips leave out **Film**; the restyle includes all six.
+
+**The theme work, in order (user's decision: one PR per area)**:
+
+| # | PR | Covers |
+|---|---|---|
+| 1 | Foundation | New assets in `Public/design/`; Tailwind config with the tokens and Outfit; the gradient **app nav** (logo + wordmark, pill links with an active state, "+ Create Event", user pill with avatar and an account dropdown, Sign in for visitors, a phone menu); footer; the shared button/badge/card/form styles; real logo in the admin sidebar; one avatar helper used everywhere a person is shown |
+| 2 | Profile photos | Save the Google photo at sign-in; Gravatar lookup; upload (JPEG/PNG/WebP, 2 MB, checked by content) with local storage; the photo choice on `/account`; erasure removes uploads; the seed stops using third-party photos |
+| 3 | Events | Header with the live indicator; All / Going / Hosting tabs (Going needs a new filter); city and venue search; category chips with photos (all six); date picker; event cards with photo, badges, host avatar, description, attendee avatars and inline Join; restyled Load more |
+| 4 | Event detail | Breadcrumb; photo hero; action bar with host avatar and Join/Going toggle; info panel with the **map** (Google in dev, per the mapping plan); chat with bubbles, avatars, timestamps, connection indicator and a Reply button; attendee sidebar with Host/You tags |
+| 5 | Create event | Host-as chips; category picker with photos; restyled date and place fields (with the screen-reader fixes from the location PR); Public/Private cards; limit switch + stepper; live preview card. Drafts, recurring events and editing stay out unless asked for |
+| 6 | Groups | Directory and detail restyled toward the split view: search, avatars, gradient cover, moderator row, styled tabs, the ownership policy box, member rows with role badges; group create form |
+| 7 | Feed, Profile, Account, Sign in | Feed and Profile with real avatars; the Account profile section redone (the M9 follow-up); Sign in restyled |
+
 
 ## Summary
 
@@ -18,7 +49,8 @@ Status key: ✅ built to the design · 🟡 partly built · ❌ not built (the p
 | Create event (`/events/new`) | `GroupEventForm.dc.html` | ❌ plain Tailwind; works and has its key fields since the event-basics PR, but none of the artboard's layout |
 | Feed, Profile, Feedback, Privacy, Terms | no artboard | Styled with the design tokens (extrapolated) |
 | Sign in, group create form | no artboard | ❌ plain Tailwind |
-| App-wide nav (every page but Home) | all artboards | ❌ plain white Tailwind bar, not the design's nav |
+| App-wide nav (every page but Home and the admin site) | all artboards | ❌ plain white Tailwind bar, not the design's nav |
+| Admin site (`/admin`) | none (mockup chosen by the user in M10) | ✅ own theme, built in M10 |
 
 The single biggest visual gap is the **app nav**: every artboard has the same gradient nav, and no page except Home uses it.
 
@@ -117,8 +149,8 @@ This is where the most behavior is missing, not just styling.
 | Forms (inputs, focus ring, toggle switches) | 🟡 inputs built (M9) and used on Feedback and Account; event and group forms still plain; no toggle switches |
 | Chat bubbles | ❌ |
 | Responsive single-column collapse | 🟡 Home and Account have it; other pages rely on Tailwind defaults |
-| **Avatars and photos** | ❌ no page ever shows a real photo: sign-in doesn't save the provider's profile picture, and there's no upload (the DigitalOcean Spaces bucket from the architecture isn't wired up). Everything shows the placeholder avatar |
-| **Placeholder images** (`Public/design/`) | ⚠️ these are the design tool's sample photos, not licensed. `design-system.md` says they're flagged in `WARNINGS.md`, **but they aren't**: they need adding to the launch blockers |
+| **Avatars and photos** | ❌ no page ever shows a real member photo: sign-in doesn't save the provider's profile picture, and there's no Gravatar or upload (the DigitalOcean Spaces bucket from the architecture isn't wired up). Only seeded accounts show photos (`randomuser.me`). Planned in §0 (PR 2) |
+| **Placeholder images** (`Public/design/`) | ✅ resolved 2026-10-31: the user supplied the real, cleared logo, default avatar and category photos; they replace the placeholders in the foundation PR (§0) |
 
 ## 3. Pages with no artboard
 
@@ -138,7 +170,7 @@ Not design items, listed here so the audit is complete in one place.
 | M7 | No notifications for new follows or feed items |
 | M8 | Billing: skipped for now. When built, also erase Stripe data on account deletion, and finish the Account page |
 | M9 | **Launch blocker**: real Privacy Policy and Terms wording. No re-consent prompt when they change. `process-deletions` and `retention-cleanup` aren't scheduled. A deleted user who owns a group stays its owner |
-| M10 | Admin site: built (web only; the `/api/v1/admin` JSON surface moved to M11). No admin artboard exists in the design canvas, so its styling is extrapolated from the tokens. Billing is a placeholder until M8. |
+| M10 | Admin site: built (web only; the `/api/v1/admin` JSON surface moved to M11), with its own theme picked from a mockup. Billing is a placeholder until M8. Follow-ups from its reviews: per-row count queries, calendar-aligned chart buckets, focus trapping in the transfer dialog, and `HttpOnly`/`Secure` session cookies at M13 |
 | M11 | JSON API: no account, billing or admin endpoints yet |
 | M12 | i18n: not started |
 | M13 | Deployment: not started |
