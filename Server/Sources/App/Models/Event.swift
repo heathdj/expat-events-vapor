@@ -61,6 +61,25 @@ final class Event: Model, Content, @unchecked Sendable {
     @Field(key: "is_cancelled")
     var isCancelled: Bool
 
+    /// IANA time zone of the event's location (`AddEventLocationFields`).
+    /// When set, `date` is a real instant to be shown in this zone. nil for
+    /// events created before location lookup, whose `date` is the host's
+    /// wall-clock time stored as UTC (`EventDateTag` shows those in UTC).
+    @OptionalField(key: "time_zone")
+    var timeZone: String?
+
+    /// The place-search provider's IDs for the chosen city and venue, and
+    /// which provider issued them, so a place can be looked up again or
+    /// its coordinates refreshed (Google only allows keeping them 30 days).
+    @OptionalField(key: "city_place_id")
+    var cityPlaceID: String?
+
+    @OptionalField(key: "venue_place_id")
+    var venuePlaceID: String?
+
+    @OptionalField(key: "place_provider")
+    var placeProvider: String?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -89,7 +108,11 @@ final class Event: Model, Content, @unchecked Sendable {
         visibility: EventVisibility = .public,
         attendeeLimit: Int? = nil,
         isRecurring: Bool = false,
-        isCancelled: Bool = false
+        isCancelled: Bool = false,
+        timeZone: String? = nil,
+        cityPlaceID: String? = nil,
+        venuePlaceID: String? = nil,
+        placeProvider: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -108,5 +131,9 @@ final class Event: Model, Content, @unchecked Sendable {
         self.attendeeLimit = attendeeLimit
         self.isRecurring = isRecurring
         self.isCancelled = isCancelled
+        self.timeZone = timeZone
+        self.cityPlaceID = cityPlaceID
+        self.venuePlaceID = venuePlaceID
+        self.placeProvider = placeProvider
     }
 }

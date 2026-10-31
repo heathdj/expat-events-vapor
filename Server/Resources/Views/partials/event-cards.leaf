@@ -14,7 +14,7 @@
         <h2 class="font-medium">#(event.title)</h2>
         <span class="text-xs uppercase tracking-wide text-gray-500">#(event.category)</span>
     </div>
-    <p class="text-sm text-gray-700 mt-1">#eventDate(event.date, "short")</p>
+    <p class="text-sm text-gray-700 mt-1">#eventDate(event.date, "short", event.timeZone)</p>
     <p class="text-sm text-gray-500 mt-1">#(event.cityAddress) — hosted by #(event.hostDisplayName)</p>
     <p class="text-sm text-gray-400 mt-1">#(event.attendeeCount) attending</p>
 </a>

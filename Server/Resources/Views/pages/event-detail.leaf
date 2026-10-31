@@ -6,7 +6,7 @@
         <span class="text-xs uppercase tracking-wide text-gray-500">#(event.category)</span>
     </div>
     <p class="text-sm text-gray-500 mt-1">#(event.venueAddress)</p>
-    <p class="text-sm text-gray-700 mt-1" data-event-date>#eventDate(event.date, "long")</p>
+    <p class="text-sm text-gray-700 mt-1" data-event-date>#eventDate(event.date, "long", event.timeZone)</p>
     #if(event.hostUserID):
     <p class="text-sm text-gray-500">Hosted by <a href="/profile/#(event.hostUserID)" class="hover:underline">#(event.hostDisplayName)</a></p>
     #else:

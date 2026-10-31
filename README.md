@@ -39,7 +39,7 @@ expatevents-mvp/
 
 ## Prerequisites
 
-- **Swift 5.9+** (Xcode 15+ on macOS, or the Swift toolchain on Linux). Check with `swift --version`.
+- **Swift 6.0+** (Xcode 16+ on macOS, or the Swift toolchain on Linux; the time-zone library `tzf-swift` needs a 6.0 toolchain). Check with `swift --version`.
 - **Docker** (or a local Postgres 14+ instance) for the database.
 - Optionally, the [Vapor toolbox](https://docs.vapor.codes/getting-started/toolbox/) (`brew install vapor`) — not required, `swift build`/`swift run` work fine without it.
 
@@ -63,6 +63,8 @@ expatevents-mvp/
    swift run App seed            # 4 users, 2 groups, 3 events — see Commands/SeedCommand.swift
    swift run App serve           # starts the server on http://localhost:8080
    ```
+   City and venue suggestions on the create-event form come from Google in development: set `GOOGLE_MAPS_API_KEY` in `Server/.env` (a key with **Places API (New)** enabled; see `.env.example`). Without it the form falls back to a few built-in sample places (Lisbon, Madrid, Berlin, Mexico City, Bangkok). Time zones are worked out offline from coordinates with [`tzf-swift`](https://github.com/ringsaturn/tzf-swift).
+
    Two maintenance commands (M9), run by hand for now (scheduling them in production is M13's job):
    ```sh
    swift run App process-deletions   # erases accounts with a pending "Delete account" request

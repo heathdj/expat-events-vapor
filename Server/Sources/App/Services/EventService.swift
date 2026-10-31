@@ -1,12 +1,16 @@
 import Fluent
 import Vapor
 import ExpatEventsAPI
+import ExpatEventsGeo
 
 /// Shared by both the web (Leaf/htmx) and `/api/v1` event controllers
 /// (architecture §3: "both built from the same service layer") — M4, plus
 /// the group-hosting pieces M6 will extend.
 struct EventService {
     let db: Database
+    /// Only needed when creating events: works out a time zone from the
+    /// venue's (or city's) coordinates when the request doesn't name one.
+    var location: LocationService? = nil
 
     // MARK: - Fetching & visibility
 
@@ -113,6 +117,43 @@ struct EventService {
 
     // MARK: - Mutations
 
+    /// The request's own time zone if it names a real one; otherwise the
+    /// venue's, then the city's, from their coordinates; otherwise nil (no
+    /// coordinates, e.g. an API client that didn't send any).
+    func resolvedTimeZone(for request: CreateEventRequest) throws -> String? {
+        if let requested = Self.nonEmpty(request.timeZone) {
+            guard TimeZone(identifier: requested) != nil else {
+                throw APIError(code: "invalid_time_zone", message: "\(requested) isn't a known time zone.")
+            }
+            return requested
+        }
+        guard let location else { return nil }
+        return location.timeZoneIdentifier(for: GeoCoordinate(latitude: request.venueLat, longitude: request.venueLng))
+            ?? location.timeZoneIdentifier(for: GeoCoordinate(latitude: request.cityLat, longitude: request.cityLng))
+    }
+
+    /// Place-search providers the app knows. Anything else an API client
+    /// sends is dropped rather than stored, since a future refresh job will
+    /// trust (provider, place ID) pairs.
+    static let knownPlaceProviders: Set<String> = ["google", "apple", "sample"]
+
+    private static func knownProvider(_ value: String?) -> String? {
+        guard let name = nonEmpty(value)?.lowercased(), knownPlaceProviders.contains(name) else { return nil }
+        return name
+    }
+
+    /// Place IDs are opaque provider strings; cap them so a client can't
+    /// store arbitrary blobs.
+    private static func placeID(_ value: String?) -> String? {
+        guard let id = nonEmpty(value), id.count <= 512 else { return nil }
+        return id
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
     func createEvent(_ request: CreateEventRequest, hostUserID: UUID) async throws -> Event {
         let limits = PlanLimitsService(db: db)
         var hostGroupID: Group.IDValue?
@@ -135,6 +176,7 @@ struct EventService {
         if let attendeeLimit = request.attendeeLimit {
             try await limits.assertCanSetAttendeeLimit(attendeeLimit, hostUserID: hostGroupID == nil ? hostUserID : nil)
         }
+        let timeZone = try resolvedTimeZone(for: request)
 
         let event = Event(
             title: request.title,
@@ -151,7 +193,11 @@ struct EventService {
             hostGroupID: hostGroupID,
             visibility: request.visibility,
             attendeeLimit: request.attendeeLimit,
-            isRecurring: request.isRecurring
+            isRecurring: request.isRecurring,
+            timeZone: timeZone,
+            cityPlaceID: Self.placeID(request.cityPlaceID),
+            venuePlaceID: Self.placeID(request.venuePlaceID),
+            placeProvider: Self.knownProvider(request.placeProvider)
         )
         try await event.save(on: db)
         return event
@@ -194,6 +240,24 @@ struct EventService {
         if let venueAddress = request.venueAddress { event.venueAddress = venueAddress }
         if let venueLat = request.venueLat { event.venueLat = venueLat }
         if let venueLng = request.venueLng { event.venueLng = venueLng }
+
+        // Moving the event means its old place IDs and time zone no longer
+        // describe it (found by the location PR's review): the IDs are
+        // dropped (a refresh job would otherwise move it back), and the
+        // time zone is worked out again from the new coordinates. A legacy
+        // event (no time zone) only gets one if this update also sets the
+        // date: its stored date is the host's wall-clock time as UTC, which
+        // would shift if a zone were attached to it without a new instant.
+        let cityMoved = request.cityLat != nil || request.cityLng != nil
+        let venueMoved = request.venueLat != nil || request.venueLng != nil
+        if cityMoved { event.cityPlaceID = nil }
+        if venueMoved { event.venuePlaceID = nil }
+        if event.cityPlaceID == nil && event.venuePlaceID == nil { event.placeProvider = nil }
+        if (cityMoved || venueMoved), let location, event.timeZone != nil || request.date != nil {
+            event.timeZone = location.timeZoneIdentifier(for: GeoCoordinate(latitude: event.venueLat, longitude: event.venueLng))
+                ?? location.timeZoneIdentifier(for: GeoCoordinate(latitude: event.cityLat, longitude: event.cityLng))
+                ?? event.timeZone
+        }
 
         try await event.save(on: db)
         return event
@@ -293,7 +357,8 @@ struct EventService {
             hostPhotoURL: hostPhoto,
             attendeeCount: count,
             visibility: event.visibility,
-            isCancelled: event.isCancelled
+            isCancelled: event.isCancelled,
+            timeZone: event.timeZone
         )
     }
 
@@ -335,7 +400,8 @@ struct EventService {
             isRecurring: event.isRecurring,
             isCancelled: event.isCancelled,
             attendees: attendees,
-            isRequesterAttending: isAttending
+            isRequesterAttending: isAttending,
+            timeZone: event.timeZone
         )
     }
 

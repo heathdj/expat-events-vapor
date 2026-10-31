@@ -1,6 +1,7 @@
 import Fluent
 import Vapor
 import ExpatEventsAPI
+import ExpatEventsGeo
 
 /// The server-rendered public site's event pages (architecture §6, M4).
 ///
@@ -85,10 +86,25 @@ struct EventWebController: RouteCollection {
         let eventTitle: String
         let eventDescription: String
         let date: String
-        let cityAddress: String
-        let venueAddress: String
         let attendeeLimit: String
         let errorMessage: String?
+        // The city and venue fields' keys, the same ones
+        // `PlaceFieldContext.CityLeaf`/`VenueLeaf` give the field partials
+        // when they're re-rendered on their own.
+        let cityAddress: String
+        let cityLat: String
+        let cityLng: String
+        let cityPlaceID: String
+        let citySession: String
+        let citySelected: Bool
+        let cityError: String? = nil
+        let venueAddress: String
+        let venueLat: String
+        let venueLng: String
+        let venuePlaceID: String
+        let venueSession: String
+        let venueSelected: Bool
+        let venueError: String? = nil
     }
 
     struct ErrorPageContext: Encodable {
@@ -228,11 +244,16 @@ struct EventWebController: RouteCollection {
         let category: String
         let date: String
         let cityAddress: String
-        let cityLat: Double?
-        let cityLng: Double?
+        // Coordinates and place IDs arrive as text: the field partials'
+        // hidden inputs are emptied when the user edits a picked place, and
+        // an empty string can't be decoded as a Double.
+        let cityLat: String?
+        let cityLng: String?
+        let cityPlaceID: String?
         let venueAddress: String
-        let venueLat: Double?
-        let venueLng: Double?
+        let venueLat: String?
+        let venueLng: String?
+        let venuePlaceID: String?
         let visibility: String?
         let hostGroupID: String?
         let attendeeLimit: String?
@@ -243,8 +264,8 @@ struct EventWebController: RouteCollection {
         let user = try req.auth.require(User.self)
         let input = try req.content.decode(EventFormInput.self)
         do {
-            let request = try Self.createRequest(from: input)
-            let event = try await EventService(db: req.db).createEvent(request, hostUserID: try user.requireID())
+            let request = try Self.createRequest(from: input, location: req.application.location)
+            let event = try await EventService(db: req.db, location: req.application.location).createEvent(request, hostUserID: try user.requireID())
             return req.redirect(to: "/events/\(try event.requireID())")
         } catch let error as APIError {
             req.logger.notice("Event creation rejected: \(error.code) — \(error.message)")
@@ -253,11 +274,27 @@ struct EventWebController: RouteCollection {
         }
     }
 
-    static func createRequest(from input: EventFormInput) throws -> CreateEventRequest {
+    /// Turns the form into a create request. The city must be one picked
+    /// from the suggestions (that's where the event's coordinates and time
+    /// zone come from); the venue may be free text. The date is read as
+    /// local time at the venue, or the city if no venue was picked.
+    static func createRequest(from input: EventFormInput, location: LocationService) throws -> CreateEventRequest {
         guard let category = EventCategory(rawValue: input.category) else {
             throw APIError(code: "invalid_category", message: "Choose a category.")
         }
-        guard let date = EventDateParsing.parse(input.date) else {
+        guard let city = GeoCoordinate.validated(latitude: input.cityLat, longitude: input.cityLng) else {
+            throw APIError(code: "city_not_chosen", message: "Choose your city from the suggestions.")
+        }
+        // A venue picked for a different city (picked first, then the city
+        // was changed) is ignored rather than allowed to set the event's
+        // time zone and pin: the hidden fields can be stale, so the server
+        // checks the two are plausibly together.
+        var venue = GeoCoordinate.validated(latitude: input.venueLat, longitude: input.venueLng)
+        if let picked = venue, picked.distanceKilometers(to: city) > Self.maxVenueDistanceKilometers {
+            venue = nil
+        }
+        let timeZone = venue.flatMap(location.timeZoneIdentifier(for:)) ?? location.timeZoneIdentifier(for: city)
+        guard let date = EventDateParsing.parse(input.date, timeZone: timeZone.flatMap(TimeZone.init(identifier:))) else {
             throw APIError(code: "invalid_date", message: "Enter the event's date and time.")
         }
         let hostGroupIDText = input.hostGroupID?.trimmingCharacters(in: .whitespaces) ?? ""
@@ -283,16 +320,24 @@ struct EventWebController: RouteCollection {
             category: category,
             date: date,
             cityAddress: input.cityAddress,
-            cityLat: input.cityLat ?? 0,
-            cityLng: input.cityLng ?? 0,
+            cityLat: city.latitude,
+            cityLng: city.longitude,
             venueAddress: input.venueAddress,
-            venueLat: input.venueLat ?? 0,
-            venueLng: input.venueLng ?? 0,
+            venueLat: venue?.latitude ?? 0,
+            venueLng: venue?.longitude ?? 0,
             hostGroupID: hostGroupID,
             visibility: visibility,
-            attendeeLimit: attendeeLimit
+            attendeeLimit: attendeeLimit,
+            timeZone: timeZone,
+            cityPlaceID: input.cityPlaceID,
+            venuePlaceID: venue == nil ? nil : input.venuePlaceID,
+            placeProvider: location.provider.name
         )
     }
+
+    /// How far a picked venue may be from the picked city before it's
+    /// treated as stale and ignored (metro areas plus a margin).
+    static let maxVenueDistanceKilometers = 150.0
 
     private func renderForm(req: Request, user: User, input: EventFormInput?, errorMessage: String?) async throws -> View {
         let userID = try user.requireID()
@@ -305,6 +350,16 @@ struct EventWebController: RouteCollection {
             let id = try group.requireID().uuidString
             hostOptions.append(FormOption(value: id, label: group.name, isSelected: id.caseInsensitiveCompare(selectedHost) == .orderedSame))
         }
+        // Re-filled after a rejection: keep what was typed and picked. Each
+        // render starts fresh autocomplete sessions.
+        let city = PlaceFieldContext(
+            address: input?.cityAddress ?? "", latitude: input?.cityLat ?? "", longitude: input?.cityLng ?? "",
+            placeID: input?.cityPlaceID ?? "", session: UUID().uuidString
+        )
+        let venue = PlaceFieldContext(
+            address: input?.venueAddress ?? "", latitude: input?.venueLat ?? "", longitude: input?.venueLng ?? "",
+            placeID: input?.venuePlaceID ?? "", session: UUID().uuidString
+        )
         return try await req.view.render("pages/event-form", EventFormContext(
             categories: EventCategory.allCases.map {
                 FormOption(value: $0.rawValue, label: $0.rawValue.capitalized, isSelected: $0.rawValue == selectedCategory)
@@ -316,10 +371,20 @@ struct EventWebController: RouteCollection {
             eventTitle: input?.title ?? "",
             eventDescription: input?.description ?? "",
             date: input?.date ?? "",
-            cityAddress: input?.cityAddress ?? "",
-            venueAddress: input?.venueAddress ?? "",
             attendeeLimit: input?.attendeeLimit ?? "",
-            errorMessage: errorMessage
+            errorMessage: errorMessage,
+            cityAddress: city.address,
+            cityLat: city.latitude,
+            cityLng: city.longitude,
+            cityPlaceID: city.placeID,
+            citySession: city.session,
+            citySelected: city.isSelected,
+            venueAddress: venue.address,
+            venueLat: venue.latitude,
+            venueLng: venue.longitude,
+            venuePlaceID: venue.placeID,
+            venueSession: venue.session,
+            venueSelected: venue.isSelected
         ))
     }
 

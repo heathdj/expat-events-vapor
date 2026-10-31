@@ -67,7 +67,9 @@ struct EventAPIController: RouteCollection {
     func create(req: Request) async throws -> EventDTO {
         let user = try req.auth.require(User.self)
         let body = try req.content.decode(CreateEventRequest.self)
-        let service = EventService(db: req.db)
+        // `location` lets the service work out a time zone from the
+        // coordinates when the client didn't send one.
+        let service = EventService(db: req.db, location: req.application.location)
         let event = try await service.createEvent(body, hostUserID: try user.requireID())
         return try await service.fullDTO(for: event, requesterID: try user.requireID())
     }
@@ -77,7 +79,7 @@ struct EventAPIController: RouteCollection {
         let user = try req.auth.require(User.self)
         let event = try await eventOrNotFound(req)
         let body = try req.content.decode(UpdateEventRequest.self)
-        let service = EventService(db: req.db)
+        let service = EventService(db: req.db, location: req.application.location)
         let updated = try await service.updateEvent(event, with: body, requesterID: try user.requireID())
         return try await service.fullDTO(for: updated, requesterID: try user.requireID())
     }

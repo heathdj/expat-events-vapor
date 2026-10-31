@@ -1,6 +1,7 @@
 import Fluent
 import Vapor
 import ExpatEventsAPI
+import ExpatEventsGeo
 
 /// `swift run App seed` (or `vapor run seed`). M1 acceptance criterion #3:
 /// creates at least 3 users, 2 events (one user-hosted, one group-hosted),
@@ -100,6 +101,7 @@ struct SeedCommand: Command {
 
         let empireStateTrip = try await findOrCreateEvent(
             db: db,
+            location: application.location,
             title: "Trip to the Empire State Building",
             description: "A classic tourist trip, expat-style — meet at the entrance.",
             category: .culture,
@@ -114,6 +116,7 @@ struct SeedCommand: Command {
 
         _ = try await findOrCreateEvent(
             db: db,
+            location: application.location,
             title: "Berlin Nomads Happy Hour",
             description: "Monthly meetup for the group — first round's on us.",
             category: .drinks,
@@ -128,6 +131,7 @@ struct SeedCommand: Command {
 
         let lisbonFoodCrawl = try await findOrCreateEvent(
             db: db,
+            location: application.location,
             title: "Lisbon Food Crawl",
             description: "Group meetup for the second seeded group -- a walking tour of Alfama's best tascas.",
             category: .food,
@@ -248,6 +252,7 @@ struct SeedCommand: Command {
 
     private func findOrCreateEvent(
         db: Database,
+        location: LocationService,
         title: String,
         description: String,
         category: EventCategory,
@@ -257,7 +262,16 @@ struct SeedCommand: Command {
         hostUserID: UUID?,
         hostGroupID: UUID?
     ) async throws -> Event {
+        // The venue's zone, else the city's -- the same order the create
+        // form uses -- so seeded events show local times like real ones.
+        let timeZone = location.timeZoneIdentifier(for: GeoCoordinate(latitude: venueLat, longitude: venueLng))
+            ?? location.timeZoneIdentifier(for: GeoCoordinate(latitude: cityLat, longitude: cityLng))
         if let existing = try await Event.query(on: db).filter(\.$title == title).first() {
+            // Backfill rows seeded before events had a time zone.
+            if existing.timeZone == nil, let timeZone {
+                existing.timeZone = timeZone
+                try await existing.save(on: db)
+            }
             return existing
         }
         let event = Event(
@@ -268,7 +282,8 @@ struct SeedCommand: Command {
             cityAddress: cityAddress, cityLat: cityLat, cityLng: cityLng,
             venueAddress: venueAddress, venueLat: venueLat, venueLng: venueLng,
             hostUserID: hostUserID,
-            hostGroupID: hostGroupID
+            hostGroupID: hostGroupID,
+            timeZone: timeZone
         )
         try await event.save(on: db)
         return event

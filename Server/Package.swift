@@ -14,7 +14,10 @@ let package = Package(
         .package(url: "https://github.com/vapor/jwt.git", from: "4.2.2"),
         // Shared DTOs/enums/ChatEnvelope — the wire-format contract for
         // /api/v1, consumed by any future native client too (architecture §5).
-        .package(path: "../Packages/ExpatEventsAPI")
+        .package(path: "../Packages/ExpatEventsAPI"),
+        // Provider-neutral place search + time zones
+        // (docs/mapping-decision-plan.md).
+        .package(path: "../Packages/ExpatEventsGeo")
     ],
     targets: [
         .executableTarget(
@@ -25,7 +28,8 @@ let package = Package(
                 .product(name: "Vapor", package: "vapor"),
                 .product(name: "Leaf", package: "leaf"),
                 .product(name: "JWT", package: "jwt"),
-                .product(name: "ExpatEventsAPI", package: "ExpatEventsAPI")
+                .product(name: "ExpatEventsAPI", package: "ExpatEventsAPI"),
+                .product(name: "ExpatEventsGeo", package: "ExpatEventsGeo")
             ],
             swiftSettings: [
                 .unsafeFlags(["-cross-module-optimization"], .when(configuration: .release))
