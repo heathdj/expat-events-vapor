@@ -54,7 +54,7 @@ struct AuthWebController: RouteCollection {
         } catch {
             throw Abort(.unauthorized, reason: APIError.invalidProviderToken.message)
         }
-        let user = try await AuthService(db: req.db).findOrCreateUser(
+        let user = try await Self.findOrCreateUser(req: req,
             provider: .apple,
             providerUserID: identity.providerUserID,
             email: identity.email,
@@ -88,7 +88,7 @@ struct AuthWebController: RouteCollection {
         } catch {
             throw Abort(.unauthorized, reason: APIError.invalidProviderToken.message)
         }
-        let user = try await AuthService(db: req.db).findOrCreateUser(
+        let user = try await Self.findOrCreateUser(req: req,
             provider: .google,
             providerUserID: identity.providerUserID,
             email: identity.email,
@@ -104,6 +104,25 @@ struct AuthWebController: RouteCollection {
         // "return to the page you were on before signing in" gap
         // (MILESTONES.md, M5).
         return req.redirect(to: "/feed")
+    }
+
+    /// `AuthService.findOrCreateUser`, with its `APIError`s (a suspended
+    /// account, M10; a missing email) turned into an `Abort` the sign-in
+    /// page can show: Vapor's error body carries the message as `reason`.
+    private static func findOrCreateUser(
+        req: Request,
+        provider: IdentityProvider,
+        providerUserID: String,
+        email: String?,
+        displayName: String?
+    ) async throws -> User {
+        do {
+            return try await AuthService(db: req.db).findOrCreateUser(
+                provider: provider, providerUserID: providerUserID, email: email, displayName: displayName
+            )
+        } catch let error as APIError {
+            throw Abort(error.httpStatus, reason: error.message)
+        }
     }
 
     /// M2 acceptance criterion #7: signing out invalidates the web session.

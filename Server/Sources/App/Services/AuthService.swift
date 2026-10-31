@@ -34,6 +34,7 @@ struct AuthService {
             .with(\.$user)
             .first()
         {
+            try Self.assertCanSignIn(identity.user)
             return identity.user
         }
 
@@ -44,6 +45,7 @@ struct AuthService {
             .filter(\.$email == email)
             .first()
         {
+            try Self.assertCanSignIn(existingUser)
             let identity = OAuthIdentity(userID: try existingUser.requireID(), provider: provider, providerUserID: providerUserID)
             try await identity.save(on: db)
             return existingUser
@@ -71,5 +73,15 @@ struct AuthService {
         try await subscription.save(on: db)
 
         return user
+    }
+
+    static let suspendedError = APIError(code: "account_suspended", message: "This account has been suspended. Contact support@expatevents.net.")
+
+    /// M10 criterion #3: a suspended account can't sign in at all, on the
+    /// website or the API. Refused before anything is written, so a
+    /// suspended account doesn't even gain a linked sign-in method.
+    /// (An erased account can't get here: both lookups above miss it.)
+    static func assertCanSignIn(_ user: User) throws {
+        guard !user.isSuspended else { throw suspendedError }
     }
 }

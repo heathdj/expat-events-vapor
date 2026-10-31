@@ -34,7 +34,7 @@ extension APIError {
     var httpStatus: HTTPResponseStatus {
         switch code {
         case "invalid_provider_token", "unauthorized": return .unauthorized
-        case "forbidden", "plan_limit_exceeded": return .forbidden
+        case "forbidden", "plan_limit_exceeded", "account_suspended": return .forbidden
         case "not_found": return .notFound
         case "email_required": return .badRequest
         default: return .badRequest
