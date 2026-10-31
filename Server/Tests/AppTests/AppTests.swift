@@ -1,5 +1,6 @@
 @testable import App
 import ExpatEventsAPI
+import ExpatEventsGeo
 import XCTVapor
 import Fluent
 
@@ -2444,7 +2445,7 @@ final class AppTests: XCTestCase {
                 XCTAssertFalse(res.body.string.contains(#"name="hostGroupID""#), "A plain member has no group to host as.")
             }
 
-            let groupForm = "hostGroupID=\(groupID)&title=Group+Picnic&description=Bring+food&category=food&date=2030-12-05T18%3A30&cityAddress=Lisbon&cityLat=0&cityLng=0&venueAddress=Park&venueLat=0&venueLng=0&visibility=private&attendeeLimit=30"
+            let groupForm = "hostGroupID=\(groupID)&title=Group+Picnic&description=Bring+food&category=food&date=2030-12-05T18%3A30&cityAddress=Lisbon&cityLat=38.7223&cityLng=-9.1393&cityPlaceID=sample-city-lisbon&venueAddress=Park&venueLat=&venueLng=&visibility=private&attendeeLimit=30"
             try await app.test(.POST, "/events", headers: [
                 "Cookie": moderatorCookie,
                 "Content-Type": "application/x-www-form-urlencoded",
@@ -2456,9 +2457,11 @@ final class AppTests: XCTestCase {
             XCTAssertNil(groupEvent?.$hostUser.id)
             XCTAssertEqual(groupEvent?.visibility, .private)
             XCTAssertEqual(groupEvent?.attendeeLimit, 30)
+            // Lisbon is UTC+0 in December, so local 18:30 is 18:30Z.
             XCTAssertEqual(groupEvent?.date, EventDateParsing.parse("2030-12-05T18:30"))
+            XCTAssertEqual(groupEvent?.timeZone, "Europe/Lisbon")
 
-            let selfForm = "title=Plain+Meetup&description=Coffee&category=culture&date=2030-12-06T10%3A00&cityAddress=Lisbon&cityLat=0&cityLng=0&venueAddress=Cafe&venueLat=0&venueLng=0&visibility=public&attendeeLimit="
+            let selfForm = "title=Plain+Meetup&description=Coffee&category=culture&date=2030-12-06T10%3A00&cityAddress=Lisbon&cityLat=38.7223&cityLng=-9.1393&cityPlaceID=sample-city-lisbon&venueAddress=Cafe&venueLat=&venueLng=&visibility=public&attendeeLimit="
             try await app.test(.POST, "/events", headers: [
                 "Cookie": memberCookie,
                 "Content-Type": "application/x-www-form-urlencoded",
@@ -2478,7 +2481,7 @@ final class AppTests: XCTestCase {
         try await withApp { app in
             let user = try await makeUser(db: app.db, email: "form-free@example.com", plan: .free)
             let cookie = try await sessionCookie(for: user, db: app.db)
-            let base = "title=Kept+Title&description=Kept+description&category=music&cityAddress=Porto&cityLat=0&cityLng=0&venueAddress=Hall&venueLat=0&venueLng=0"
+            let base = "title=Kept+Title&description=Kept+description&category=music&cityAddress=Porto&cityLat=41.1579&cityLng=-8.6291&venueAddress=Hall&venueLat=&venueLng="
             let cases: [(String, String)] = [
                 ("&date=2030-12-05T18%3A30&visibility=private", "Private events require a Premium plan."),
                 ("&date=2030-12-05T18%3A30&visibility=public&attendeeLimit=6", "Free accounts can have up to 5 attendees per event."),
@@ -2672,5 +2675,438 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(url.contains("category=music"))
         XCTAssertTrue(url.contains("city=A%2BB%20%26%20C"))
         XCTAssertTrue(url.contains("page=2"))
+    }
+
+    // MARK: - Location: place search, coordinates, time zones
+
+    /// Records requests and answers from a queue of canned responses, so the
+    /// Google adapter is tested without the network.
+    final class RecordingTransport: GeoHTTPTransport, @unchecked Sendable {
+        private let lock = NSLock()
+        private var responses: [GeoHTTPResponse]
+        private var recorded: [GeoHTTPRequest] = []
+
+        init(responses: [GeoHTTPResponse]) {
+            self.responses = responses
+        }
+
+        /// Every request sent so far, read under the same lock `send` uses.
+        var requests: [GeoHTTPRequest] {
+            lock.withLock { recorded }
+        }
+
+        func send(_ request: GeoHTTPRequest) async throws -> GeoHTTPResponse {
+            lock.withLock {
+                recorded.append(request)
+                return responses.isEmpty ? GeoHTTPResponse(status: 500, body: Data()) : responses.removeFirst()
+            }
+        }
+    }
+
+    /// tzf-swift's bundled boundary data gives the right zone for each city
+    /// on the mapping plan's test list, offline; 0,0 ("not set") gives none.
+    func testTimeZoneResolverFindsZonesForExpatCities() throws {
+        let location = LocationService(provider: SamplePlaceSearchProvider(), timeZones: try TZFTimeZoneResolver())
+        let cases: [(Double, Double, String)] = [
+            (38.7223, -9.1393, "Europe/Lisbon"),
+            (40.4168, -3.7038, "Europe/Madrid"),
+            (52.5200, 13.4050, "Europe/Berlin"),
+            (19.4326, -99.1332, "America/Mexico_City"),
+            (13.7563, 100.5018, "Asia/Bangkok"),
+        ]
+        for (lat, lng, expected) in cases {
+            XCTAssertEqual(location.timeZoneIdentifier(for: GeoCoordinate(latitude: lat, longitude: lng)), expected)
+        }
+        XCTAssertNil(location.timeZoneIdentifier(for: GeoCoordinate(latitude: 0, longitude: 0)))
+    }
+
+    /// The Google adapter sends Places API (New) requests in the expected
+    /// shape (cities restricted, the session token shared, the cheapest
+    /// field mask) and reads the responses; the time zone comes from tzf.
+    func testGooglePlacesProviderRequestShapesAndParsing() async throws {
+        let autocompleteJSON = #"{"suggestions":[{"placePrediction":{"place":"places/abc","placeId":"abc","text":{"text":"Lisbon, Portugal"},"structuredFormat":{"mainText":{"text":"Lisbon"},"secondaryText":{"text":"Portugal"}}}},{"queryPrediction":{"text":{"text":"lisbon hotels"}}}]}"#
+        let detailsJSON = #"{"id":"abc","formattedAddress":"Lisbon, Portugal","location":{"latitude":38.7223,"longitude":-9.1393}}"#
+        let transport = RecordingTransport(responses: [
+            GeoHTTPResponse(status: 200, body: Data(autocompleteJSON.utf8)),
+            GeoHTTPResponse(status: 200, body: Data(detailsJSON.utf8)),
+            GeoHTTPResponse(status: 403, body: Data(#"{"error":{"message":"API key not valid"}}"#.utf8)),
+        ])
+        let provider = GooglePlacesProvider(apiKey: "test-key", transport: transport)
+        let location = LocationService(provider: provider, timeZones: try TZFTimeZoneResolver())
+
+        let suggestions = try await location.suggestions(for: "lis", kind: .city, sessionToken: "session-1")
+        XCTAssertEqual(suggestions, [PlaceSuggestion(placeID: "abc", title: "Lisbon", subtitle: "Portugal")], "Query predictions are skipped; only places are offered.")
+
+        let place = try await location.resolve(placeID: "abc", name: "Lisbon", sessionToken: "session-1")
+        XCTAssertEqual(place.coordinate, GeoCoordinate(latitude: 38.7223, longitude: -9.1393))
+        XCTAssertEqual(place.formattedAddress, "Lisbon, Portugal")
+        XCTAssertEqual(place.name, "Lisbon", "The name comes from the suggestion, keeping lookups in the cheapest tier.")
+        XCTAssertEqual(place.provider, "google")
+        XCTAssertEqual(place.timeZoneIdentifier, "Europe/Lisbon", "Filled in by the resolver.")
+
+        let autocomplete = transport.requests[0]
+        XCTAssertEqual(autocomplete.method, .post)
+        XCTAssertEqual(autocomplete.url, "https://places.googleapis.com/v1/places:autocomplete")
+        XCTAssertEqual(autocomplete.headers["X-Goog-Api-Key"], "test-key")
+        let body = String(decoding: autocomplete.body ?? Data(), as: UTF8.self)
+        XCTAssertTrue(body.contains(#""(cities)""#), "City searches are restricted to cities.")
+        XCTAssertTrue(body.contains(#""sessionToken":"session-1""#))
+
+        let details = transport.requests[1]
+        XCTAssertEqual(details.method, .get)
+        XCTAssertEqual(details.url, "https://places.googleapis.com/v1/places/abc?sessionToken=session-1")
+        XCTAssertEqual(details.headers["X-Goog-FieldMask"], "id,formattedAddress,location")
+
+        do {
+            _ = try await location.suggestions(for: "lis", kind: .city, sessionToken: "session-2")
+            XCTFail("A provider error must surface, not look like zero results.")
+        } catch let error as GeoError {
+            XCTAssertEqual(error, .provider(status: 403, message: "API key not valid"))
+        }
+    }
+
+    /// The form's autocomplete endpoints: suggestions for a signed-in user
+    /// (none for a signed-out visitor, since every call costs money with a
+    /// real provider), and picking one returns the field with its
+    /// coordinates filled in.
+    func testPlacesEndpointsSuggestAndSelect() async throws {
+        try await withApp { app in
+            try await app.test(.GET, "/places/suggest?kind=city&cityAddress=lis&session=s1") { res async in
+                XCTAssertEqual(res.status, .unauthorized)
+            }
+
+            let user = try await makeUser(db: app.db, email: "places@example.com")
+            let cookie = try await sessionCookie(for: user, db: app.db)
+            try await app.test(.GET, "/places/suggest?kind=city&cityAddress=lis&session=s1", headers: ["Cookie": cookie]) { res async in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains("Lisbon"))
+                XCTAssertTrue(html.contains("id=sample-city-lisbon"), "Each suggestion carries its own select URL.")
+                XCTAssertTrue(html.contains("#city-field"))
+                XCTAssertFalse(html.contains("Madrid"))
+            }
+            try await app.test(.GET, "/places/suggest?kind=venue&venueAddress=retiro&cityLat=40.4168&cityLng=-3.7038&session=s2", headers: ["Cookie": cookie]) { res async in
+                XCTAssertTrue(res.body.string.contains("Parque del Retiro"))
+            }
+            try await app.test(.GET, "/places/suggest?kind=city&cityAddress=zzzz&session=s3", headers: ["Cookie": cookie]) { res async in
+                XCTAssertTrue(res.body.string.contains("No matches"))
+            }
+            try await app.test(.GET, "/places/select?kind=city&id=sample-city-lisbon&name=Lisbon&session=s1", headers: ["Cookie": cookie]) { res async in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains(#"id="city-field""#), "The whole field is returned to replace the old one.")
+                XCTAssertTrue(html.contains(#"name="cityLat" value="38.7223""#))
+                XCTAssertTrue(html.contains(#"name="cityLng" value="-9.1393""#))
+                XCTAssertTrue(html.contains(#"name="cityPlaceID" value="sample-city-lisbon""#))
+                XCTAssertTrue(html.contains("data-place-selected"))
+            }
+        }
+    }
+
+    /// Creating an event from the form with a picked city and venue stores
+    /// the coordinates, place IDs and time zone, and reads the typed time as
+    /// local time there: 18:30 in Madrid is 17:30Z in winter and 16:30Z in
+    /// summer. Lists then show it back as 6:30 PM, Madrid time.
+    func testCreateFormStoresPlacesAndTimeZoneAndReadsDateAsLocalTime() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "tz-host@example.com", plan: .premium)
+            let cookie = try await sessionCookie(for: user, db: app.db)
+            func form(_ title: String, _ date: String) -> String {
+                "title=\(title)&description=Walk&category=travel&date=\(date)&cityAddress=Madrid%2C+Spain&cityLat=40.4168&cityLng=-3.7038&cityPlaceID=sample-city-madrid&venueAddress=Parque+del+Retiro&venueLat=40.4153&venueLng=-3.6844&venuePlaceID=sample-venue-retiro&visibility=public&attendeeLimit="
+            }
+            for (title, date) in [("Winter+Walk", "2030-12-05T18%3A30"), ("Summer+Walk", "2030-07-05T18%3A30")] {
+                try await app.test(.POST, "/events", headers: [
+                    "Cookie": cookie,
+                    "Content-Type": "application/x-www-form-urlencoded",
+                ], body: .init(string: form(title, date))) { res async in
+                    XCTAssertEqual(res.status, .seeOther)
+                }
+            }
+
+            let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+            let winter = try await Event.query(on: app.db).filter(\.$title == "Winter Walk").first()
+            XCTAssertEqual(winter?.timeZone, "Europe/Madrid")
+            XCTAssertEqual(winter?.date, EventDateParsing.parse("2030-12-05T17:30", timeZone: utc), "18:30 in Madrid in winter is 17:30Z.")
+            XCTAssertEqual(winter?.cityPlaceID, "sample-city-madrid")
+            XCTAssertEqual(winter?.venuePlaceID, "sample-venue-retiro")
+            XCTAssertEqual(winter?.placeProvider, "sample")
+            XCTAssertEqual(winter?.venueLat, 40.4153)
+
+            let summer = try await Event.query(on: app.db).filter(\.$title == "Summer Walk").first()
+            XCTAssertEqual(summer?.date, EventDateParsing.parse("2030-07-05T16:30", timeZone: utc), "18:30 in Madrid in summer is 16:30Z.")
+
+            try await app.test(.GET, "/events") { res async in
+                let html = res.body.string
+                XCTAssertTrue(html.contains("Thu, Dec 5 · 6:30 PM"), "Shown as local time at the event.")
+                XCTAssertTrue(html.contains("Fri, Jul 5 · 6:30 PM"))
+            }
+        }
+    }
+
+    /// The city has to be one picked from the suggestions (it's where the
+    /// coordinates and time zone come from); a venue can be free text, and
+    /// then the time zone comes from the city.
+    func testCreateFormRequiresAPickedCityButNotAPickedVenue() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "pick-city@example.com")
+            let cookie = try await sessionCookie(for: user, db: app.db)
+            let typedOnly = "title=Typed+City&description=d&category=culture&date=2030-12-05T18%3A30&cityAddress=Somewhere&cityLat=&cityLng=&cityPlaceID=&venueAddress=My+flat&venueLat=&venueLng=&venuePlaceID=&visibility=public"
+            try await app.test(.POST, "/events", headers: [
+                "Cookie": cookie,
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: typedOnly)) { res async in
+                XCTAssertEqual(res.status, .badRequest)
+                XCTAssertTrue(res.body.string.contains("Choose your city from the suggestions."))
+                XCTAssertTrue(res.body.string.contains(#"value="My flat""#), "What was typed is kept.")
+            }
+
+            let freeVenue = "title=Flat+Party&description=d&category=drinks&date=2030-12-05T18%3A30&cityAddress=Bangkok&cityLat=13.7563&cityLng=100.5018&cityPlaceID=sample-city-bangkok&venueAddress=My+flat&venueLat=&venueLng=&venuePlaceID=sample-venue-lumphini&visibility=public"
+            try await app.test(.POST, "/events", headers: [
+                "Cookie": cookie,
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: freeVenue)) { res async in
+                XCTAssertEqual(res.status, .seeOther)
+            }
+            let event = try await Event.query(on: app.db).filter(\.$title == "Flat Party").first()
+            XCTAssertEqual(event?.timeZone, "Asia/Bangkok", "No venue picked: the city's time zone.")
+            XCTAssertNil(event?.venuePlaceID, "A place ID without coordinates (the venue was retyped) is dropped.")
+            XCTAssertEqual(event?.venueLat, 0)
+        }
+    }
+
+    /// The API works out the time zone from the coordinates when the client
+    /// doesn't send one, accepts a valid one it does send, and rejects a
+    /// made-up one.
+    func testServiceWorksOutTimeZoneFromCoordinatesAndValidatesGivenOnes() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "api-tz@example.com", plan: .premium)
+            let userID = try user.requireID()
+            let service = EventService(db: app.db, location: app.location)
+            func request(_ title: String, timeZone: String?) -> CreateEventRequest {
+                CreateEventRequest(title: title, description: "d", category: .culture, date: Date().addingTimeInterval(3600),
+                                   cityAddress: "Mexico City", cityLat: 19.4326, cityLng: -99.1332,
+                                   venueAddress: "Bosque de Chapultepec", venueLat: 19.4204, venueLng: -99.1819,
+                                   timeZone: timeZone)
+            }
+            let worked = try await service.createEvent(request("Worked Out", timeZone: nil), hostUserID: userID)
+            XCTAssertEqual(worked.timeZone, "America/Mexico_City")
+            let given = try await service.createEvent(request("Given", timeZone: "America/Cancun"), hostUserID: userID)
+            XCTAssertEqual(given.timeZone, "America/Cancun", "A valid zone the client sends wins.")
+            do {
+                _ = try await service.createEvent(request("Made Up", timeZone: "Mars/Olympus_Mons"), hostUserID: userID)
+                XCTFail("An unknown time zone must be rejected.")
+            } catch is APIError {}
+        }
+    }
+
+    /// A venue search sends the city's coordinates as a 30 km bias circle,
+    /// so nearby places come first; a city search sends no bias.
+    func testGoogleVenueSearchIsBiasedToTheCity() async throws {
+        let empty = #"{"suggestions":[]}"#
+        let transport = RecordingTransport(responses: [
+            GeoHTTPResponse(status: 200, body: Data(empty.utf8)),
+            GeoHTTPResponse(status: 200, body: Data(empty.utf8)),
+        ])
+        let location = LocationService(provider: GooglePlacesProvider(apiKey: "k", transport: transport), timeZones: nil)
+        _ = try await location.suggestions(for: "retiro", kind: .venue, sessionToken: "s", near: GeoCoordinate(latitude: 40.4168, longitude: -3.7038))
+        _ = try await location.suggestions(for: "madrid", kind: .city, sessionToken: "s")
+        let requests = transport.requests
+        XCTAssertEqual(requests.count, 2)
+        let venueBody = String(decoding: requests[0].body ?? Data(), as: UTF8.self)
+        XCTAssertTrue(venueBody.contains("locationBias"))
+        XCTAssertTrue(venueBody.contains(#""radius":30000"#), venueBody)
+        XCTAssertTrue(venueBody.contains("40.4168"))
+        let cityBody = String(decoding: requests[1].body ?? Data(), as: UTF8.self)
+        XCTAssertFalse(cityBody.contains("locationBias"), cityBody)
+    }
+
+    /// When the venue is across a time-zone border from the city (Offenburg
+    /// in Germany for a Strasbourg event), the venue's zone wins.
+    func testCreateFormUsesTheVenueTimeZoneOverTheCitys() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "border@example.com")
+            let cookie = try await sessionCookie(for: user, db: app.db)
+            let body = "title=Border+Meetup&description=d&category=drinks&date=2030-12-05T18%3A30&cityAddress=Strasbourg&cityLat=48.5734&cityLng=7.7521&cityPlaceID=strasbourg&venueAddress=Offenburg&venueLat=48.4729&venueLng=7.9408&venuePlaceID=offenburg&visibility=public"
+            try await app.test(.POST, "/events", headers: [
+                "Cookie": cookie,
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: body)) { res async in
+                XCTAssertEqual(res.status, .seeOther)
+            }
+            let event = try await Event.query(on: app.db).filter(\.$title == "Border Meetup").first()
+            XCTAssertEqual(event?.timeZone, "Europe/Berlin")
+            XCTAssertEqual(event?.venuePlaceID, "offenburg")
+        }
+    }
+
+    /// A venue more than 150 km from the city (picked before the city was
+    /// changed) is ignored: no venue pin, place ID or time zone from it.
+    func testCreateFormDropsAVenueFarFromTheCity() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "far-venue@example.com")
+            let cookie = try await sessionCookie(for: user, db: app.db)
+            let body = "title=Far+Venue&description=d&category=drinks&date=2030-12-05T18%3A30&cityAddress=Lisbon&cityLat=38.7223&cityLng=-9.1393&cityPlaceID=sample-city-lisbon&venueAddress=Parque+del+Retiro&venueLat=40.4153&venueLng=-3.6844&venuePlaceID=sample-venue-retiro&visibility=public"
+            try await app.test(.POST, "/events", headers: [
+                "Cookie": cookie,
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: body)) { res async in
+                XCTAssertEqual(res.status, .seeOther)
+            }
+            let event = try await Event.query(on: app.db).filter(\.$title == "Far Venue").first()
+            XCTAssertEqual(event?.timeZone, "Europe/Lisbon", "The city's zone, not Madrid's.")
+            XCTAssertEqual(event?.venueLat, 0)
+            XCTAssertNil(event?.venuePlaceID)
+            XCTAssertEqual(event?.cityPlaceID, "sample-city-lisbon")
+        }
+    }
+
+    /// A rejected form keeps the picked city: its hidden coordinates and
+    /// place ID come back, so the host doesn't have to pick it again.
+    func testRejectedCreateFormKeepsThePickedCity() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "keep-city@example.com")
+            let cookie = try await sessionCookie(for: user, db: app.db)
+            let body = "title=No+Category&description=d&category=&date=2030-12-05T18%3A30&cityAddress=Lisbon%2C+Portugal&cityLat=38.7223&cityLng=-9.1393&cityPlaceID=sample-city-lisbon&venueAddress=&venueLat=&venueLng=&venuePlaceID=&visibility=public"
+            try await app.test(.POST, "/events", headers: [
+                "Cookie": cookie,
+                "Content-Type": "application/x-www-form-urlencoded",
+            ], body: .init(string: body)) { res async in
+                XCTAssertEqual(res.status, .badRequest)
+                let html = res.body.string
+                XCTAssertTrue(html.contains("Choose a category."))
+                XCTAssertTrue(html.contains(#"name="cityLat" value="38.7223""#))
+                XCTAssertTrue(html.contains(#"name="cityLng" value="-9.1393""#))
+                XCTAssertTrue(html.contains(#"name="cityPlaceID" value="sample-city-lisbon""#))
+            }
+        }
+    }
+
+    /// Picking a place is signed-in only too, and a lookup that fails
+    /// re-renders the field with a message rather than an error page.
+    func testPlacesSelectNeedsSignInAndShowsLookupFailures() async throws {
+        try await withApp { app in
+            try await app.test(.GET, "/places/select?kind=city&id=sample-city-lisbon&name=Lisbon&session=s1") { res async in
+                XCTAssertEqual(res.status, .unauthorized)
+            }
+            let user = try await makeUser(db: app.db, email: "select-fail@example.com")
+            let cookie = try await sessionCookie(for: user, db: app.db)
+            try await app.test(.GET, "/places/select?kind=venue&id=no-such-place&name=Nowhere&session=s1", headers: ["Cookie": cookie]) { res async in
+                XCTAssertEqual(res.status, .ok)
+                let html = res.body.string
+                XCTAssertTrue(html.contains(#"id="venue-field""#))
+                XCTAssertTrue(html.contains("be looked up"))
+                XCTAssertTrue(html.contains(#"value="Nowhere""#), "The typed name is kept.")
+                XCTAssertFalse(html.contains("data-place-selected"))
+            }
+        }
+    }
+
+    /// The per-user limit on place searches: blocks past the limit, counts
+    /// each user separately, and frees up once the window passes. The
+    /// endpoint shows a message instead of searching.
+    func testPlaceSearchRateLimit() async throws {
+        let limiter = PlaceSearchRateLimiter(limit: 2, window: 60)
+        let alice = UUID(), bob = UUID()
+        let start = Date()
+        let first = await limiter.allow(alice, now: start)
+        let second = await limiter.allow(alice, now: start)
+        let third = await limiter.allow(alice, now: start)
+        let other = await limiter.allow(bob, now: start)
+        let later = await limiter.allow(alice, now: start.addingTimeInterval(61))
+        XCTAssertTrue(first)
+        XCTAssertTrue(second)
+        XCTAssertFalse(third)
+        XCTAssertTrue(other, "Each user has their own limit.")
+        XCTAssertTrue(later, "Searches older than the window no longer count.")
+
+        try await withApp { app in
+            app.placeSearchLimiter = PlaceSearchRateLimiter(limit: 1, window: 60)
+            let user = try await makeUser(db: app.db, email: "rate@example.com")
+            let cookie = try await sessionCookie(for: user, db: app.db)
+            try await app.test(.GET, "/places/suggest?kind=city&cityAddress=lis&session=s1", headers: ["Cookie": cookie]) { res async in
+                XCTAssertTrue(res.body.string.contains("Lisbon"))
+            }
+            try await app.test(.GET, "/places/suggest?kind=city&cityAddress=lisb&session=s1", headers: ["Cookie": cookie]) { res async in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertTrue(res.body.string.contains("Too many searches"))
+                XCTAssertFalse(res.body.string.contains("Lisbon"))
+            }
+        }
+    }
+
+    /// A time that doesn't exist locally (clocks go forward that night)
+    /// resolves to the instant just after the jump instead of failing the
+    /// form: 01:30 in Lisbon and 02:30 in Madrid on 31 March 2030 are both
+    /// 01:30Z.
+    func testDateParsingResolvesTimesInADaylightSavingGap() throws {
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let expected = try XCTUnwrap(EventDateParsing.parse("2030-03-31T01:30", timeZone: utc))
+        XCTAssertEqual(EventDateParsing.parse("2030-03-31T01:30", timeZone: TimeZone(identifier: "Europe/Lisbon")), expected)
+        XCTAssertEqual(EventDateParsing.parse("2030-03-31T02:30", timeZone: TimeZone(identifier: "Europe/Madrid")), expected)
+    }
+
+    /// Moving an event recomputes its time zone and drops the old place
+    /// IDs; a legacy event (no zone) moved without a new date keeps no
+    /// zone, since its stored wall-clock date would otherwise shift.
+    func testUpdatingAnEventLocationRecomputesTimeZoneAndClearsPlaceIDs() async throws {
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "move@example.com", plan: .premium)
+            let userID = try user.requireID()
+            let service = EventService(db: app.db, location: app.location)
+            let created = try await service.createEvent(CreateEventRequest(
+                title: "Moving Event", description: "d", category: .culture, date: Date().addingTimeInterval(3600),
+                cityAddress: "Madrid", cityLat: 40.4168, cityLng: -3.7038,
+                venueAddress: "Retiro", venueLat: 40.4153, venueLng: -3.6844,
+                cityPlaceID: "sample-city-madrid", venuePlaceID: "sample-venue-retiro", placeProvider: "sample"
+            ), hostUserID: userID)
+            XCTAssertEqual(created.timeZone, "Europe/Madrid")
+            XCTAssertEqual(created.venuePlaceID, "sample-venue-retiro")
+
+            let moved = try await service.updateEvent(created, with: UpdateEventRequest(
+                cityAddress: "Bangkok", cityLat: 13.7563, cityLng: 100.5018,
+                venueAddress: "Lumphini Park", venueLat: 13.7314, venueLng: 100.5414
+            ), requesterID: userID)
+            XCTAssertEqual(moved.timeZone, "Asia/Bangkok")
+            XCTAssertNil(moved.cityPlaceID)
+            XCTAssertNil(moved.venuePlaceID)
+            XCTAssertNil(moved.placeProvider)
+
+            let legacy = Event(title: "Legacy Event", description: "d", category: .culture, date: Date().addingTimeInterval(3600),
+                               cityAddress: "Madrid", cityLat: 40.4168, cityLng: -3.7038,
+                               venueAddress: "Retiro", venueLat: 40.4153, venueLng: -3.6844,
+                               hostUserID: userID)
+            try await legacy.save(on: app.db)
+            let legacyMoved = try await service.updateEvent(legacy, with: UpdateEventRequest(cityLat: 38.7223, cityLng: -9.1393), requesterID: userID)
+            XCTAssertNil(legacyMoved.timeZone, "No new date: the legacy wall-clock date isn't given a zone.")
+            let legacyRedated = try await service.updateEvent(legacy, with: UpdateEventRequest(date: Date().addingTimeInterval(7200), cityLat: 38.7223, cityLng: -9.1393), requesterID: userID)
+            XCTAssertEqual(legacyRedated.timeZone, "Europe/Madrid", "With a new date, the zone comes from the (unchanged) venue.")
+        }
+    }
+
+    /// A picked venue keeps its name, not just its street address (found
+    /// at the location PR's checkpoint: a golf course showed only its
+    /// address). Cities and street addresses aren't doubled up.
+    func testPickedPlaceLabelKeepsTheVenueName() async throws {
+        func place(_ name: String, _ address: String) -> ResolvedPlace {
+            ResolvedPlace(placeID: "p", provider: "google", name: name, formattedAddress: address,
+                          coordinate: GeoCoordinate(latitude: 1, longitude: 1), timeZoneIdentifier: nil)
+        }
+        XCTAssertEqual(place("Franklin Bridge Golf Course", "1 Club Rd, Franklin, USA").label(for: .venue),
+                       "Franklin Bridge Golf Course, 1 Club Rd, Franklin, USA")
+        XCTAssertEqual(place("Lisbon", "Lisbon, Portugal").label(for: .city), "Lisbon, Portugal")
+        XCTAssertEqual(place("Rua Augusta 100", "Rua Augusta 100, Lisboa, Portugal").label(for: .venue),
+                       "Rua Augusta 100, Lisboa, Portugal", "The address already names it.")
+        XCTAssertEqual(place("Somewhere", "").label(for: .venue), "Somewhere")
+
+        try await withApp { app in
+            let user = try await makeUser(db: app.db, email: "venue-name@example.com")
+            let cookie = try await sessionCookie(for: user, db: app.db)
+            try await app.test(.GET, "/places/select?kind=venue&id=sample-venue-retiro&name=Parque+del+Retiro&session=s1", headers: ["Cookie": cookie]) { res async in
+                XCTAssertTrue(res.body.string.contains(#"name="venueAddress" value="Parque del Retiro, Plaza de la Independencia 7, Madrid, Spain""#))
+            }
+            try await app.test(.GET, "/places/select?kind=city&id=sample-city-lisbon&name=Lisbon&session=s1", headers: ["Cookie": cookie]) { res async in
+                XCTAssertTrue(res.body.string.contains(#"value="Lisbon, Portugal""#))
+            }
+        }
     }
 }
