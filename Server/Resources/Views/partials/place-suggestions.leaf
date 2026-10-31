@@ -1,0 +1,34 @@
+<!--
+  Autocomplete suggestions under a city or venue field (PlacesWebController
+  .suggest). Picking one asks the server to look the place up and replaces
+  the whole field (fieldTarget) with its coordinates filled in. Every value
+  here is precomputed in Swift, including each suggestion's select URL.
+-->
+#if(errorMessage):
+<p class="text-xs text-amber-700 mt-1">#(errorMessage)</p>
+#endif
+#if(hasSuggestions):
+<ul class="mt-1 border border-gray-200 rounded-md bg-white divide-y divide-gray-100 shadow-sm" data-place-suggestions>
+    #for(row in suggestions):
+    <li>
+        <!-- hx-sync drops a second click while the first lookup is still
+             running: each lookup is a billed call, and the session it
+             ends can't be reused. -->
+        <button type="button" hx-get="#(row.selectURL)" hx-target="#(fieldTarget)" hx-swap="outerHTML"
+                hx-sync="closest ul:drop"
+                class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
+            <span class="font-medium">#(row.title)</span>
+            #if(row.hasSubtitle):
+            <span class="block text-xs text-gray-500">#(row.subtitle)</span>
+            #endif
+        </button>
+    </li>
+    #endfor
+</ul>
+#if(showGoogleAttribution):
+<p class="text-[11px] text-gray-400 mt-1 text-right">Powered by Google</p>
+#endif
+#endif
+#if(showNoResults):
+<p class="text-xs text-gray-500 mt-1">No matches. Check the spelling, or keep typing.</p>
+#endif

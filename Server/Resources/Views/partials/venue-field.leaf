@@ -1,0 +1,29 @@
+<!--
+  The create form's Venue field: the same markup as city-field.leaf with
+  venue keys (see that file's comment). Searches send the picked city's
+  coordinates (hx-include) so venue suggestions favor that city. Picking a
+  venue is optional: a private home or an unlisted spot can be typed as
+  free text, and the event then takes its time zone from the city.
+-->
+<div id="venue-field" data-place-field>
+    <label class="block text-sm font-medium mb-1" for="venueAddress">Venue</label>
+    <input id="venueAddress" name="venueAddress" value="#(venueAddress)" required autocomplete="off"
+           placeholder="A café, a park, an address"
+           class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+           hx-get="/places/suggest" hx-trigger="input changed delay:300ms" hx-target="\#venue-suggestions"
+           hx-vals='{"kind": "venue", "session": "#(venueSession)"}'
+           hx-include="[name='cityLat'],[name='cityLng']"
+           oninput="this.closest('[data-place-field]').querySelectorAll('input[type=hidden]').forEach(function (i) { i.value = '' })">
+    <input type="hidden" name="venueLat" value="#(venueLat)">
+    <input type="hidden" name="venueLng" value="#(venueLng)">
+    <input type="hidden" name="venuePlaceID" value="#(venuePlaceID)">
+    #if(venueError):
+    <p class="text-xs text-red-700 mt-1" role="alert">#(venueError)</p>
+    #endif
+    #if(venueSelected):
+    <p class="text-xs text-green-700 mt-1" data-place-selected>Location found.</p>
+    #else:
+    <p class="text-xs text-gray-500 mt-1">Pick a suggestion if it's listed, or type it in full.</p>
+    #endif
+    <div id="venue-suggestions"></div>
+</div>

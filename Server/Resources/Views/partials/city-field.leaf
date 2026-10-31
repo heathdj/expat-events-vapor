@@ -1,0 +1,35 @@
+<!--
+  The create form's City field with live suggestions. Rendered inline (via
+  \#extend from pages/event-form.leaf) and standalone by
+  PlacesWebController.select after a suggestion is picked, which replaces
+  this whole element (id="city-field") with the coordinates filled in.
+
+  Typing again clears the hidden coordinates and place ID, so a city that
+  was picked and then edited isn't silently kept; it clears the venue's
+  too, since a venue picked for the old city no longer applies (the server
+  also ignores a venue far from the city). The server requires a
+  picked city (it's how the event gets coordinates and a time zone).
+  venue-field.leaf is the same markup with venue keys; Leaf's \#extend
+  shares one context, so the two can't be one parameterized partial.
+-->
+<div id="city-field" data-place-field>
+    <label class="block text-sm font-medium mb-1" for="cityAddress">City</label>
+    <input id="cityAddress" name="cityAddress" value="#(cityAddress)" required autocomplete="off"
+           placeholder="Start typing a city"
+           class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+           hx-get="/places/suggest" hx-trigger="input changed delay:300ms" hx-target="\#city-suggestions"
+           hx-vals='{"kind": "city", "session": "#(citySession)"}'
+           oninput="document.querySelectorAll('[data-place-field] input[type=hidden]').forEach(function (i) { i.value = '' })">
+    <input type="hidden" name="cityLat" value="#(cityLat)">
+    <input type="hidden" name="cityLng" value="#(cityLng)">
+    <input type="hidden" name="cityPlaceID" value="#(cityPlaceID)">
+    #if(cityError):
+    <p class="text-xs text-red-700 mt-1" role="alert">#(cityError)</p>
+    #endif
+    #if(citySelected):
+    <p class="text-xs text-green-700 mt-1" data-place-selected>Location found.</p>
+    #else:
+    <p class="text-xs text-gray-500 mt-1">Pick your city from the suggestions.</p>
+    #endif
+    <div id="city-suggestions"></div>
+</div>

@@ -34,6 +34,9 @@
 
     <h2>Contact</h2>
     <p>Questions about this policy: <a href="mailto:support@expatevents.net">support@expatevents.net</a>.</p>
+
+    <h2>Credits</h2>
+    <p>Event time zones are worked out from time zone boundary data by <a href="https://github.com/evansiroky/timezone-boundary-builder">timezone-boundary-builder</a>, © OpenStreetMap contributors, available under the <a href="https://opendatacommons.org/licenses/odbl/">Open Database License (ODbL)</a>.</p>
 </div>
 #endexport
 #endextend

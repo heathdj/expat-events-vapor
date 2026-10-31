@@ -16,6 +16,7 @@ func routes(_ app: Application) throws {
     try app.register(collection: AccountWebController())
     try app.register(collection: LegalWebController())
     try app.register(collection: FeedbackWebController())
+    try app.register(collection: PlacesWebController())
 
     // `/api/v1` — bearer-token authenticated, wrapped in APIErrorMiddleware
     // so every error response is the shared `{code, message}` shape
