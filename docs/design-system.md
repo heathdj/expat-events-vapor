@@ -83,7 +83,7 @@ All six screens share one `:root` token set (verbatim from the canvas CSS):
 
 ## Assets
 
-Extracted from the canvas and committed to `Server/Public/design/`:
+Extracted from the canvas and committed to `Server/Public/design/` (replaced by the user's real assets in the theme foundation PR; same file names):
 
 - `logo.png` — the ExpatEvents mark used in the nav brand lockup (128×128, transparent).
 - `avatar-placeholder.png` — generic user avatar (160×160) used everywhere a real profile photo isn't available yet.

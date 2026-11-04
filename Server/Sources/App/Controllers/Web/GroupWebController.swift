@@ -18,6 +18,9 @@ struct GroupWebController: RouteCollection {
 
     struct NewGroupPageContext: Encodable {
         let title = "Start a group"
+        /// The route requires sign-in; without this the nav showed the
+        /// signed-out state (found by the theme foundation's review).
+        let isSignedIn = true
         /// M6 acceptance criterion #1: set when a plan-limit rejection
         /// (not Premium, or already owns a group) needs to be shown back
         /// to the user as a clear message, not a raw error page.

@@ -4,61 +4,126 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>#(title) — ExpatEvents</title>
+    <link rel="icon" type="image/png" href="/design/logo.png">
     <!--
-      NOTE: this MVP scaffold loads Tailwind/htmx/Alpine from CDNs for
-      speed of setup. Architecture §2/§15 calls for Tailwind compiled at
-      build time via the CLI and htmx/Alpine/Flowbite vendored into
-      /Public — swap these <script> tags for the compiled build before
-      shipping past the MVP scaffold stage.
+      Theme foundation: the design canvas's app nav and footer, the real
+      logo and default avatar, and the canvas tokens (colors, radius,
+      shadow, Outfit) available to Tailwind as theme values, e.g.
+      bg-app, text-ink, rounded-card, font-display. Tailwind still loads
+      from the CDN (compiled build at M13, design audit section 0);
+      htmx/Alpine likewise. design-tokens.css holds the canvas component
+      classes (.card, .btn-*, .badge-*, .ds-*); app-theme.css the nav,
+      footer and the extra button variants.
     -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        app: 'var(--bg)',
+                        surface: 'var(--surface)',
+                        'surface-2': 'var(--surface-2)',
+                        ink: { DEFAULT: 'var(--ink)', soft: 'var(--ink-soft)', faint: 'var(--ink-faint)' },
+                        line: 'var(--line)',
+                        brand: { 1: 'var(--brand-1)', 2: 'var(--brand-2)', 3: 'var(--brand-3)' },
+                        accent: { DEFAULT: 'var(--accent)', soft: 'var(--accent-soft)' },
+                        gold: { DEFAULT: 'var(--gold)', soft: 'var(--gold-soft)' }
+                    },
+                    borderRadius: { field: 'var(--r-sm)', card: 'var(--r-md)', hero: 'var(--r-lg)' },
+                    boxShadow: { card: 'var(--shadow-sm)', lift: 'var(--shadow-md)' },
+                    fontFamily: { display: ['Outfit', 'system-ui', 'sans-serif'] }
+                }
+            }
+        };
+    </script>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/ws.js"></script>
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <!--
-      docs/design-system.md's tokens + a few reusable component classes
-      (.card, .btn-*, .badge-*, .ds-*), added here so any page extending
-      this layout can opt into them incrementally -- see
-      Public/css/design-tokens.css's own header comment for what's
-      copied verbatim from the canvas versus extrapolated, and
-      MILESTONES.md's incremental-design-system-rollout note for why
-      this isn't a full site reskin in one PR. Loading it here (global)
-      rather than per-page is safe because it defines nothing but :root
-      custom properties and specifically-named classes -- no bare
-      element selectors -- so a page that never references those class
-      names (still plain Tailwind, e.g. /events, /groups) renders
-      identically to before this was added.
-    -->
     <link rel="stylesheet" href="/css/design-tokens.css">
+    <link rel="stylesheet" href="/css/app-theme.css">
 </head>
-<body class="bg-gray-50 text-gray-900 min-h-screen flex flex-col">
-    <nav class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-        <a href="/" class="font-semibold text-lg">ExpatEvents</a>
-        <div class="flex items-center gap-4 text-sm">
-            <a href="/events" class="hover:underline">Events</a>
-            <a href="/groups" class="hover:underline">Groups</a>
+<body class="app-body min-h-screen flex flex-col" x-data="{ menu: false }" @keydown.escape.window="menu = false">
+    <nav class="app-nav" aria-label="Main">
+        <div class="app-nav-inner">
+            <a href="/" class="app-brand"><img src="/design/logo.png" alt=""><span>ExpatEvents</span></a>
+            <div class="app-nav-links">
+                <a href="/events" class="app-nav-link #navActive("/events")">Events</a>
+                <a href="/groups" class="app-nav-link #navActive("/groups")">Groups</a>
+                #if(isSignedIn):
+                <a href="/feed" class="app-nav-link #navActive("/feed")">Feed</a>
+                #else:
+                <a href="/\#pricing" class="app-nav-link">Pricing</a>
+                #endif
+            </div>
+            <div class="app-nav-actions">
+                #if(isSignedIn):
+                <a href="/events/new" class="btn btn-solid-light btn-sm">+ Create Event</a>
+                <div class="app-user" x-data="{ open: false }" @keydown.escape="open = false; $refs.pill.focus()" @click.outside="open = false" @focusout="if (!$el.contains($event.relatedTarget)) open = false">
+                    <button type="button" class="user-pill" x-ref="pill" @click="open = !open" :aria-expanded="open.toString()" aria-expanded="false" aria-controls="app-user-menu">
+                        <img src="#currentUser("avatar")" alt="">
+                        <span class="user-pill-name">#currentUser("name")</span>
+                        <svg class="icon" style="width:13px;height:13px" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                    <div id="app-user-menu" class="app-menu" x-cloak x-show="open" x-transition.opacity>
+                        <a href="/profile/#currentUser("id")" class="app-menu-item">Your profile</a>
+                        <a href="/account" class="app-menu-item">Account</a>
+                        #adminNavLink()
+                        <div class="app-menu-divider" aria-hidden="true"></div>
+                        <form method="post" action="/logout">
+                            <button type="submit" class="app-menu-item">Sign out</button>
+                        </form>
+                    </div>
+                </div>
+                #else:
+                <a href="/login" class="btn btn-ghost btn-sm">Sign in</a>
+                #endif
+            </div>
+            <button type="button" class="app-nav-toggle" @click="menu = !menu" :aria-expanded="menu.toString()" aria-expanded="false" aria-controls="app-mobile-menu" aria-label="Menu">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+        </div>
+        <div id="app-mobile-menu" class="app-mobile-menu" x-cloak x-show="menu" x-transition.opacity>
+            <a href="/events" class="app-nav-link #navActive("/events")">Events</a>
+            <a href="/groups" class="app-nav-link #navActive("/groups")">Groups</a>
             #if(isSignedIn):
-            <a href="/feed" class="hover:underline">Feed</a>
-            <a href="/account" class="hover:underline">Account</a>
-            #adminNavLink()
-            <form method="post" action="/logout" class="inline">
-                <button type="submit" class="hover:underline">Sign out</button>
+            <a href="/feed" class="app-nav-link #navActive("/feed")">Feed</a>
+            <a href="/events/new" class="app-nav-link">+ Create Event</a>
+            <a href="/profile/#currentUser("id")" class="app-nav-link">Your profile</a>
+            <a href="/account" class="app-nav-link #navActive("/account")">Account</a>
+            #adminNavLink("mobile")
+            <form method="post" action="/logout">
+                <button type="submit" class="app-nav-link">Sign out</button>
             </form>
             #else:
-            <a href="/login" class="hover:underline">Sign in</a>
+            <a href="/\#pricing" class="app-nav-link">Pricing</a>
+            <a href="/login" class="app-nav-link">Sign in</a>
             #endif
         </div>
     </nav>
     <main class="flex-1 max-w-5xl w-full mx-auto px-4 py-8">
         #import("body")
     </main>
-    <!-- M9: every app page links to the legal pages and feedback, not
-         just the marketing home page's footer. -->
-    <footer class="border-t border-gray-200 bg-white px-4 py-4 text-sm text-gray-500">
-        <div class="max-w-5xl mx-auto flex flex-wrap gap-4">
-            <a href="/feedback" class="hover:underline">Feedback</a>
-            <a href="/privacy" class="hover:underline">Privacy policy</a>
-            <a href="/terms" class="hover:underline">Terms and conditions</a>
+    <footer class="app-footer">
+        <div class="app-footer-inner">
+            <div class="app-footer-grid">
+                <div>
+                    <h2>About us</h2>
+                    <a href="/feedback">Feedback</a>
+                    <a href="/privacy">Privacy policy</a>
+                    <a href="/terms">Terms and conditions</a>
+                </div>
+                <div>
+                    <h2>Services</h2>
+                    <a href="/events">Events</a>
+                    <a href="/groups">Groups</a>
+                </div>
+                <div>
+                    <h2>ExpatEvents, a Bald Traveler site</h2>
+                    <p class="app-footer-tagline">Building an expat community by helping you socialize with other expats.</p>
+                </div>
+            </div>
+            <div class="app-footer-bottom">&copy; ExpatEvents. All rights reserved.</div>
         </div>
     </footer>
 </body>
