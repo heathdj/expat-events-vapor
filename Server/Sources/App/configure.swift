@@ -18,6 +18,10 @@ public func configure(_ app: Application) async throws {
     app.views.use(.leaf)
     app.leaf.tags["eventDate"] = EventDateTag()
     app.leaf.tags["adminNavLink"] = AdminNavLinkTag()
+    // Theme foundation: the shared layout's nav and avatars.
+    app.leaf.tags["avatarURL"] = AvatarURLTag()
+    app.leaf.tags["currentUser"] = CurrentUserTag()
+    app.leaf.tags["navActive"] = NavActiveTag()
     app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
 
     registerMigrations(app)

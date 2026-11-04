@@ -19,11 +19,7 @@
 
 <div class="ds-account-layout">
     <div class="card ds-account-profile" x-data="{ editing: #(startEditing) }">
-        #if(photoURL):
-        <img src="#(photoURL)" alt="" class="ds-avatar">
-        #else:
-        <img src="/design/avatar-placeholder.png" alt="" class="ds-avatar">
-        #endif
+        <img src="#avatarURL(photoURL)" alt="" class="ds-avatar">
         <h4>#(displayName)</h4>
         <div class="ds-account-email">#(email)</div>
         <div class="ds-account-since">Member since #(memberSince)</div>

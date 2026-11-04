@@ -1,0 +1,75 @@
+/* ===================================================================
+ * app-theme.css -- loaded after design-tokens.css (which holds the
+ * tokens it uses) by layouts/base.leaf.
+ *
+ * Theme foundation (after M10): the app-wide nav, footer and shared
+ * buttons, verbatim from the canvas's .nav / .brand / .nav-link /
+ * .user-pill / .btn-* / .site-footer rules (Events.dc.html,
+ * Main.dc.html), prefixed app- where the canvas name was generic.
+ * Extrapolated, and flagged as such: the account dropdown (.app-menu,
+ * the canvas only draws the closed pill), the phone menu
+ * (.app-nav-toggle / .app-mobile-menu; the canvas has no phone nav),
+ * and .btn-ghost's exact values (named in design-system.md but not
+ * drawn in the artboards' signed-in state).
+ * =================================================================== */
+.app-body{background:var(--bg);color:var(--ink);font-family:var(--font-body);}
+
+.app-nav{position:sticky;top:0;z-index:50;background:var(--brand-gradient);box-shadow:var(--shadow-sm);}
+.app-nav-inner{max-width:1280px;margin:0 auto;display:flex;align-items:center;gap:28px;padding:14px 32px;}
+.app-brand{display:flex;align-items:center;gap:10px;color:#fff;font-family:var(--font-display);font-weight:700;font-size:19px;text-decoration:none;}
+.app-brand img{width:30px;height:30px;display:block;}
+.app-nav-links{display:flex;align-items:center;gap:4px;flex:1;}
+.app-nav-link{color:rgba(255,255,255,.82);font-weight:500;font-size:14.5px;padding:8px 14px;border-radius:999px;text-decoration:none;background:none;border:none;cursor:pointer;font-family:inherit;text-align:left;}
+.app-nav-link:hover{color:#fff;background:rgba(255,255,255,.08);}
+.app-nav-link.is-active{color:#fff;background:rgba(255,255,255,.16);}
+/* Visible focus on the dark gradient (the browsers' default rings are
+   near-invisible on navy). */
+.app-nav :focus-visible{outline:2px solid #fff;outline-offset:2px;}
+.app-menu :focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+.app-nav-actions{display:flex;align-items:center;gap:12px;}
+
+a.btn{text-decoration:none;}
+.btn-solid-light{background:#fff;color:var(--brand-1);}
+.btn-solid-light:hover{background:oklch(96% 0.01 250);}
+/* The nav's right end is the gradient's light teal, where white text
+   alone is under 3:1; a dark tint behind the ghost button, user pill and
+   menu button keeps them readable (AA). Not on the canvas, which shows
+   these only over its darker mid-gradient. */
+.btn-ghost{background:rgba(8,20,60,.28);color:#fff;border:1.5px solid rgba(255,255,255,.6);}
+.btn-ghost:hover{background:rgba(8,20,60,.4);}
+.btn-going{background:var(--accent-soft);color:oklch(38% 0.09 195);}
+
+.app-user{position:relative;}
+.user-pill{display:flex;align-items:center;gap:8px;color:#fff;font-size:14px;font-weight:500;background:rgba(8,20,60,.32);padding:6px 14px 6px 6px;border-radius:999px;border:none;cursor:pointer;font-family:inherit;}
+.user-pill:hover{background:rgba(8,20,60,.45);}
+.user-pill img{width:26px;height:26px;border-radius:999px;object-fit:cover;background:#fff;}
+.user-pill-name{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.app-menu{position:absolute;right:0;top:calc(100% + 8px);min-width:200px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);box-shadow:var(--shadow-md);padding:6px;z-index:60;}
+.app-menu-item{display:block;width:100%;text-align:left;padding:9px 12px;border-radius:8px;color:var(--ink);font-size:14px;font-weight:500;text-decoration:none;background:none;border:none;cursor:pointer;font-family:inherit;}
+.app-menu-item:hover{background:var(--surface-2);}
+.app-menu-divider{height:1px;background:var(--line);margin:6px 4px;}
+
+.app-nav-toggle{display:none;margin-left:auto;color:#fff;background:rgba(8,20,60,.32);border:none;border-radius:10px;padding:8px;cursor:pointer;}
+.app-nav-toggle .icon{width:22px;height:22px;}
+.app-mobile-menu{display:none;}
+/* 960px, not 860px: the full row (brand, three links, Create Event and a
+   long name in the pill) needs about 950px. */
+@media (max-width:960px){
+  .app-nav-inner{padding:12px 16px;gap:12px;}
+  .app-nav-links,.app-nav-actions{display:none;}
+  .app-nav-toggle{display:inline-flex;}
+  .app-mobile-menu{display:flex;flex-direction:column;gap:2px;padding:4px 12px 14px;}
+}
+
+.app-footer{background:var(--ink);color:oklch(85% 0.01 264);}
+.app-footer-inner{max-width:1280px;margin:0 auto;padding:56px 32px 32px;}
+.app-footer-grid{display:grid;grid-template-columns:1fr 1fr 1.6fr;gap:40px;}
+.app-footer-grid h2{color:#fff;font-size:14px;font-weight:600;font-family:var(--font-display);margin:0 0 16px;}
+.app-footer-grid a{color:oklch(78% 0.015 264);font-size:14px;display:block;margin-bottom:10px;text-decoration:none;}
+.app-footer-grid a:hover{color:#fff;}
+.app-footer-tagline{color:oklch(70% 0.015 264);font-size:14px;max-width:360px;}
+.app-footer-bottom{border-top:1px solid oklch(32% 0.01 264);margin-top:40px;padding-top:22px;color:oklch(68% 0.01 264);font-size:12.5px;}
+@media (max-width:760px){
+  .app-footer-inner{padding:40px 16px 28px;}
+  .app-footer-grid{grid-template-columns:1fr;gap:28px;}
+}

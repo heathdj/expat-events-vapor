@@ -22,11 +22,7 @@
 -->
 <div class="card" style="padding:24px;" x-data="{ tab: 'events' }">
     <div style="display:flex;align-items:center;gap:16px;">
-        #if(profile.photoURL):
-        <img src="#(profile.photoURL)" alt="" class="ds-avatar ds-avatar-lg">
-        #else:
-        <div class="ds-avatar ds-avatar-lg ds-avatar-placeholder"></div>
-        #endif
+        <img src="#avatarURL(profile.photoURL)" alt="" class="ds-avatar ds-avatar-lg">
         <div>
             <h1 class="ds-font-display" style="font-size:22px;">#(profile.displayName)</h1>
             <p style="font-size:13.5px;color:var(--ink-faint);margin-top:4px;">#(profile.followerCount) followers · #(profile.followingCount) following</p>

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>#(title) — ExpatEvents</title>
+    <link rel="icon" type="image/png" href="/design/logo.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -27,7 +28,7 @@
            :style="menu ? 'transform: translateX(0)' : ''" aria-label="Admin navigation">
         <div class="flex h-full flex-col px-3 py-5">
             <a href="/admin" class="mb-6 flex items-center gap-2.5 px-2.5 text-[15px] font-bold text-white">
-                <span class="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-sky-500 to-teal-400 text-xs">EE</span>
+                <img src="/design/logo.png" alt="" class="h-8 w-8">
                 ExpatEvents Admin
             </a>
             <nav class="flex flex-col gap-0.5 text-sm font-medium">
