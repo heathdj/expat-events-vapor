@@ -24,6 +24,8 @@ Status key: ✅ built to the design · 🟡 partly built · ❌ not built (the p
 - **The nav's account dropdown uses Alpine** (already loaded on every page), not Flowbite, so no new library is added for one menu.
 - **Category photos** show on event cards, the event-detail hero and the create form's category picker. The canvas's category chips leave out **Film**; the restyle includes all six.
 
+**Update (foundation PR, 2026-11-04)**: the real assets are in `Public/design/` (category photos resized to at most 1,200px wide; the drinks photo is only 640px wide and may look soft in a large hero), every page on `layouts/base.leaf` has the canvas's gradient nav (logo + wordmark, pill links with the current section highlighted, "+ Create Event", the user pill with photo and name opening an account menu, Sign in and Pricing for visitors, a phone menu) and the canvas footer, the page background is the canvas `--bg`, and the canvas tokens are Tailwind theme values (`bg-app`, `text-ink`, `rounded-card`, `font-display`, ...). Feed, Profile and Account show photos through one helper (`#avatarURL`), and the admin sidebar uses the real logo. Page contents are unchanged until their own PRs.
+
 **The theme work, in order (user's decision: one PR per area)**:
 
 | # | PR | Covers |
@@ -49,7 +51,7 @@ Status key: ✅ built to the design · 🟡 partly built · ❌ not built (the p
 | Create event (`/events/new`) | `GroupEventForm.dc.html` | ❌ plain Tailwind; works and has its key fields since the event-basics PR, but none of the artboard's layout |
 | Feed, Profile, Feedback, Privacy, Terms | no artboard | Styled with the design tokens (extrapolated) |
 | Sign in, group create form | no artboard | ❌ plain Tailwind |
-| App-wide nav (every page but Home and the admin site) | all artboards | ❌ plain white Tailwind bar, not the design's nav |
+| App-wide nav (every page but Home and the admin site) | all artboards | ✅ built in the theme foundation PR |
 | Admin site (`/admin`) | none (mockup chosen by the user in M10) | ✅ own theme, built in M10 |
 
 The single biggest visual gap is the **app nav**: every artboard has the same gradient nav, and no page except Home uses it.
