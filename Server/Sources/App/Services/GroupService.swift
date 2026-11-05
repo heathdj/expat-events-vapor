@@ -56,11 +56,13 @@ struct GroupService {
     func createGroup(_ request: CreateGroupRequest, ownerID: UUID) async throws -> Group {
         try await PlanLimitsService(db: db).assertCanCreateGroup(ownerID: ownerID)
 
-        let slug = try await uniqueSlug(from: request.name)
+        // Same rules as the edit page (GroupProfileService).
+        let details = try GroupProfileService.validatedDetails(name: request.name, description: request.description)
+        let slug = try await uniqueSlug(from: details.name)
         let group = Group(
-            name: request.name,
+            name: details.name,
             slug: slug,
-            description: request.description,
+            description: details.description,
             visibility: request.visibility,
             ownerID: ownerID
         )

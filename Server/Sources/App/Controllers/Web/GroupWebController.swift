@@ -71,6 +71,8 @@ struct GroupWebController: RouteCollection {
         let canJoin: Bool
         let isInviteOnlyAndNotMember: Bool
         let members: [MemberRowContext]
+        /// Theme PR 3: the owner or a moderator, who get "Edit group".
+        var canManage: Bool = false
     }
 
     func boot(routes: RoutesBuilder) throws {
@@ -159,7 +161,8 @@ struct GroupWebController: RouteCollection {
             isMemberNotOwner: flags.isMemberNotOwner,
             canJoin: flags.canJoin,
             isInviteOnlyAndNotMember: flags.isInviteOnlyAndNotMember,
-            members: flags.memberRows
+            members: flags.memberRows,
+            canManage: try await GroupProfileService.canManage(group, userID: requesterID, on: req.db)
         ))
     }
 
