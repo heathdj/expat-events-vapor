@@ -7,8 +7,9 @@ import Vapor
 /// already pointed at `/`, but hitting it 404'd.
 ///
 /// A signed-in visitor is never shown the marketing page below -- they're
-/// redirected straight to `/feed`, which is also where `AuthWebController`
-/// now sends a fresh sign-in, so `/` and "just signed in" land in the same
+/// redirected straight to `/events` (the feed until the user asked for
+/// Events at the theme foundation checkpoint), which is also where
+/// `AuthWebController` sends a fresh sign-in, so `/` and "just signed in" land in the same
 /// place either way. That's also why `pages/home.leaf` doesn't need an
 /// `isSignedIn` branch the way every other page's template does: this
 /// route only ever renders it for a signed-out request.
@@ -31,7 +32,7 @@ struct HomeWebController: RouteCollection {
     @Sendable
     func index(req: Request) async throws -> Response {
         if req.auth.get(User.self) != nil {
-            return req.redirect(to: "/feed")
+            return req.redirect(to: "/events")
         }
         let activeEventCount = try await Event.query(on: req.db)
             .filter(\.$isCancelled == false)

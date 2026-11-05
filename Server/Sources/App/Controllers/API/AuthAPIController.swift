@@ -45,6 +45,7 @@ struct AuthAPIController: RouteCollection {
             email: identity.email,
             displayName: body.displayName
         )
+        try await req.profilePhotos.updateAfterSignIn(user, provider: .apple, googlePicture: nil)
         return try await tokenResponse(for: user, on: req)
     }
 
@@ -73,6 +74,7 @@ struct AuthAPIController: RouteCollection {
             email: identity.email,
             displayName: nil
         )
+        try await req.profilePhotos.updateAfterSignIn(user, provider: .google, googlePicture: identity.picture)
         return try await tokenResponse(for: user, on: req)
     }
 

@@ -58,18 +58,16 @@ struct AuthWebController: RouteCollection {
             provider: .apple,
             providerUserID: identity.providerUserID,
             email: identity.email,
-            displayName: body.displayName
+            displayName: body.displayName,
+            googlePicture: nil
         )
         req.auth.login(user)
         req.session.authenticate(user)
-        // M7: the activity feed is the post-sign-in landing page now, not
-        // events -- matches what "/" itself now does for a signed-in
-        // visitor (HomeWebController.index), so a fresh sign-in and a
-        // later visit to "/" land in the same place. This is the default
-        // target only -- it does not address the separately tracked
-        // "return to the page you were on before signing in" gap
-        // (MILESTONES.md, M5).
-        return req.redirect(to: "/feed")
+        // Events is the landing page after sign-in (user's request at the
+        // theme foundation checkpoint; it was the feed from M7), matching
+        // what "/" does for a signed-in visitor. Returning to the page you
+        // were on before signing in is still a tracked gap (M5).
+        return req.redirect(to: "/events")
     }
 
     @Sendable
@@ -92,18 +90,16 @@ struct AuthWebController: RouteCollection {
             provider: .google,
             providerUserID: identity.providerUserID,
             email: identity.email,
-            displayName: nil
+            displayName: nil,
+            googlePicture: identity.picture
         )
         req.auth.login(user)
         req.session.authenticate(user)
-        // M7: the activity feed is the post-sign-in landing page now, not
-        // events -- matches what "/" itself now does for a signed-in
-        // visitor (HomeWebController.index), so a fresh sign-in and a
-        // later visit to "/" land in the same place. This is the default
-        // target only -- it does not address the separately tracked
-        // "return to the page you were on before signing in" gap
-        // (MILESTONES.md, M5).
-        return req.redirect(to: "/feed")
+        // Events is the landing page after sign-in (user's request at the
+        // theme foundation checkpoint; it was the feed from M7), matching
+        // what "/" does for a signed-in visitor. Returning to the page you
+        // were on before signing in is still a tracked gap (M5).
+        return req.redirect(to: "/events")
     }
 
     /// `AuthService.findOrCreateUser`, with its `APIError`s (a suspended
@@ -114,15 +110,20 @@ struct AuthWebController: RouteCollection {
         provider: IdentityProvider,
         providerUserID: String,
         email: String?,
-        displayName: String?
+        displayName: String?,
+        googlePicture: String?
     ) async throws -> User {
+        let user: User
         do {
-            return try await AuthService(db: req.db).findOrCreateUser(
+            user = try await AuthService(db: req.db).findOrCreateUser(
                 provider: provider, providerUserID: providerUserID, email: email, displayName: displayName
             )
         } catch let error as APIError {
             throw Abort(error.httpStatus, reason: error.message)
         }
+        // Theme PR 2: keep the Google photo current and re-check Gravatar.
+        try await req.profilePhotos.updateAfterSignIn(user, provider: provider, googlePicture: googlePicture)
+        return user
     }
 
     /// M2 acceptance criterion #7: signing out invalidates the web session.

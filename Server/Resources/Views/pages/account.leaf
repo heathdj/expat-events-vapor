@@ -19,7 +19,7 @@
 
 <div class="ds-account-layout">
     <div class="card ds-account-profile" x-data="{ editing: #(startEditing) }">
-        <img src="#avatarURL(photoURL)" alt="" class="ds-avatar">
+        <img referrerpolicy="no-referrer" src="#avatarURL(photoURL)" alt="" class="ds-avatar">
         <h4>#(displayName)</h4>
         <div class="ds-account-email">#(email)</div>
         <div class="ds-account-since">Member since #(memberSince)</div>
@@ -88,6 +88,58 @@
                 </div>
             </div>
             <p class="ds-plan-note">Changing plans isn't available yet. **100 attendees per event by default.</p>
+        </div>
+
+        <div class="card ds-account-block" style="padding:24px 26px;" id="photo">
+            <div class="ds-section-title">Profile photo</div>
+            #if(photoNotice):
+            <div class="ds-alert ds-alert-success" role="status">#(photoNotice)</div>
+            #endif
+            #if(photoError):
+            <div class="ds-alert ds-alert-error" role="alert" data-photo-error>#(photoError)</div>
+            #endif
+            <form method="post" action="/account/photo/source">
+                <fieldset class="ds-photo-options">
+                    <legend class="sr-only">Which photo to show</legend>
+                    #for(option in photoOptions):
+                    #if(option.isAvailable):
+                    <label class="ds-photo-option">
+                        #if(option.isSelected):
+                        <input type="radio" name="source" value="#(option.value)" checked>
+                        #else:
+                        <input type="radio" name="source" value="#(option.value)">
+                        #endif
+                        <img referrerpolicy="no-referrer" src="#avatarURL(option.previewURL)" alt="" class="ds-avatar">
+                        <span><b>#(option.label)</b><small>#(option.detail)</small></span>
+                    </label>
+                    #else:
+                    <div class="ds-photo-option ds-photo-option-off">
+                        <span class="ds-photo-radio-off" aria-hidden="true"></span>
+                        <img referrerpolicy="no-referrer" src="#avatarURL(option.previewURL)" alt="" class="ds-avatar">
+                        <span><b>#(option.label)</b><small>#(option.detail)</small></span>
+                    </div>
+                    #endif
+                    #endfor
+                </fieldset>
+                <button type="submit" class="btn btn-accent btn-sm">Use this photo</button>
+            </form>
+            <div class="ds-photo-upload">
+                <form method="post" action="/account/photo" enctype="multipart/form-data" x-data="{ tooBig: false }"
+                      @submit="if ($refs.file.files[0] && $refs.file.files[0].size > 2097152) { $event.preventDefault(); tooBig = true }">
+                    <label class="ds-label" for="photo-file">Upload a photo</label>
+                    <p class="ds-hint">JPEG, PNG or WebP, up to 2 MB and 4096 pixels a side. It's shown as a circle. Location and camera details are removed.</p>
+                    <div class="ds-alert ds-alert-error" role="alert" x-cloak x-show="tooBig">That photo is too large. The limit is 2 MB.</div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
+                        <input id="photo-file" type="file" name="photo" accept="image/jpeg,image/png,image/webp" required x-ref="file" @change="tooBig = false">
+                        <button type="submit" class="btn btn-outline btn-sm">Upload</button>
+                    </div>
+                </form>
+                #if(hasUpload):
+                <form method="post" action="/account/photo/remove" hx-post="/account/photo/remove" hx-confirm="Remove your uploaded photo?" style="margin-top:10px;">
+                    <button type="submit" class="btn btn-danger-outline btn-sm">Remove uploaded photo</button>
+                </form>
+                #endif
+            </div>
         </div>
 
         #extend("partials/account-data-fragment")

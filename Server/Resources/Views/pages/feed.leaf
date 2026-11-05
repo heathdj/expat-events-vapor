@@ -20,7 +20,7 @@
 <div class="card" style="overflow:hidden;">
     #for(item in items):
     <div class="ds-feed-row">
-        <img src="#avatarURL(item.actorPhotoURL)" alt="" class="ds-avatar">
+        <img referrerpolicy="no-referrer" src="#avatarURL(item.actorPhotoURL)" alt="" class="ds-avatar">
         <div style="flex:1;">
             <p class="ds-feed-message">
                 <a href="/profile/#(item.actorUserID)">#(item.actorDisplayName)</a>
