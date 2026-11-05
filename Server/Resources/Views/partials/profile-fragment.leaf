@@ -31,7 +31,7 @@
     #if(canFollow):
         #if(profile.isFollowedByRequester):
         <form hx-post="/profile/#(profile.id)/unfollow" hx-target="\#profile-fragment" hx-swap="outerHTML"
-              hx-confirm="Unfollow #(profile.displayName)?"
+              hx-confirm="Unfollow #(profile.displayName)?" data-confirm-ok="Unfollow"
               method="post" action="/profile/#(profile.id)/unfollow">
             <button type="submit" class="btn btn-outline btn-sm">Following</button>
         </form>

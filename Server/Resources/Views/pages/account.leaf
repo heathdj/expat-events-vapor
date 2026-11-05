@@ -135,7 +135,7 @@
                     </div>
                 </form>
                 #if(hasUpload):
-                <form method="post" action="/account/photo/remove" hx-post="/account/photo/remove" hx-confirm="Remove your uploaded photo?" style="margin-top:10px;">
+                <form method="post" action="/account/photo/remove" hx-post="/account/photo/remove" hx-confirm="Remove your uploaded photo?" data-confirm-ok="Remove photo" style="margin-top:10px;">
                     <button type="submit" class="btn btn-danger-outline btn-sm">Remove uploaded photo</button>
                 </form>
                 #endif

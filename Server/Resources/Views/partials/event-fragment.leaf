@@ -21,7 +21,7 @@
         #if(isSignedIn):
             #if(event.isRequesterAttending):
             <form hx-post="/events/#(event.id)/leave" hx-target="\#event-fragment" hx-swap="outerHTML"
-                  hx-confirm="Leave this event?"
+                  hx-confirm="Leave this event?" data-confirm-ok="Leave event" data-confirm-cancel="Stay"
                   method="post" action="/events/#(event.id)/leave">
                 <button type="submit" class="border border-gray-300 px-4 py-2 rounded-md text-sm hover:bg-gray-50">Leave</button>
             </form>
@@ -41,7 +41,7 @@
              fixed when the destructive-action-confirms convention was
              written down in M6 -- see architecture doc §15). -->
         <form hx-post="/events/#(event.id)/cancel" hx-target="\#event-fragment" hx-swap="outerHTML"
-              hx-confirm="Cancel this event?"
+              hx-confirm="Cancel this event?" data-confirm-detail="It stays listed, marked as cancelled." data-confirm-ok="Cancel event" data-confirm-cancel="Keep event"
               method="post" action="/events/#(event.id)/cancel">
             <button type="submit" class="text-sm text-red-600 hover:underline">Cancel event</button>
         </form>

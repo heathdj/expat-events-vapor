@@ -13,7 +13,8 @@
       from the CDN (compiled build at M13, design audit section 0);
       htmx/Alpine likewise. design-tokens.css holds the canvas component
       classes (.card, .btn-*, .badge-*, .ds-*); app-theme.css the nav,
-      footer and the extra button variants.
+      footer, the extra button variants and the confirm dialog
+      (js/confirm-dialog.js, shown for every hx-confirm).
     -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -125,5 +126,21 @@
             <div class="app-footer-bottom">&copy; ExpatEvents. All rights reserved.</div>
         </div>
     </footer>
+    <dialog class="app-confirm" data-confirm-dialog role="alertdialog" aria-labelledby="app-confirm-question" aria-describedby="app-confirm-detail">
+        <div class="app-confirm-body">
+            <span class="app-confirm-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+            </span>
+            <div>
+                <h2 class="app-confirm-question" id="app-confirm-question" data-confirm-part="question">Are you sure?</h2>
+                <p class="app-confirm-detail" id="app-confirm-detail" data-confirm-part="detail" hidden></p>
+            </div>
+        </div>
+        <div class="app-confirm-actions">
+            <button type="button" class="btn btn-outline btn-sm" data-confirm-part="cancel">Go back</button>
+            <button type="button" class="btn btn-danger btn-sm" data-confirm-part="ok">Yes, continue</button>
+        </div>
+    </dialog>
+    <script src="/js/confirm-dialog.js"></script>
 </body>
 </html>
