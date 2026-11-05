@@ -28,17 +28,21 @@ Status key: ✅ built to the design · 🟡 partly built · ❌ not built (the p
 
 **Update (profile photos PR)**: built as planned (PR 2 below); see `MILESTONES.md`. Sign-in now lands on Events, and Feed is also in the user menu (both requested at the foundation checkpoint).
 
+**Update (group profile PR)**: two PRs were added at the user's request, so the theme work is now nine PRs. **Group profile & logo** (PR 3, before Events): the group's owner and moderators edit its name, description and visibility and upload a logo, shown on its event cards, its event pages, the group directory and the group page, with a new default group icon (`group-placeholder.png`, 450×450, drawn to match the default avatar). **Search & filters** (PR 5, right after Events): the plan only had city and venue search and a single date; the user wants a date range, a group filter, free-text search and "near a city" distance too. **Next after this PR** (asked at its checkpoint, user's decision: its own small PR before Events): the site's confirmations (remove photo or logo, cancel event, leave group, delete account and the rest) get a themed dialog instead of the browser's, by moving the admin site's `htmx:confirm` dialog into `layouts/base.leaf`.
+
 **The theme work, in order (user's decision: one PR per area)**:
 
 | # | PR | Covers |
 |---|---|---|
 | 1 | Foundation | New assets in `Public/design/`; Tailwind config with the tokens and Outfit; the gradient **app nav** (logo + wordmark, pill links with an active state, "+ Create Event", user pill with avatar and an account dropdown, Sign in for visitors, a phone menu); footer; the shared button/badge/card/form styles; real logo in the admin sidebar; one avatar helper used everywhere a person is shown |
 | 2 | Profile photos | Save the Google photo at sign-in; Gravatar lookup; upload (JPEG/PNG/WebP, 2 MB, checked by content) with local storage; the photo choice on `/account`; erasure removes uploads; the seed stops using third-party photos |
-| 3 | Events | Header with the live indicator; All / Going / Hosting tabs (Going needs a new filter); city and venue search; category chips with photos (all six); date picker; event cards with photo, badges, host avatar, description, attendee avatars and inline Join; restyled Load more |
-| 4 | Event detail | Breadcrumb; photo hero; action bar with host avatar and Join/Going toggle; info panel with the **map** (Google in dev, per the mapping plan); chat with bubbles, avatars, timestamps, connection indicator and a Reply button; attendee sidebar with Host/You tags |
-| 5 | Create event | Host-as chips; category picker with photos; restyled date and place fields (with the screen-reader fixes from the location PR); Public/Private cards; limit switch + stepper; live preview card. Drafts, recurring events and editing stay out unless asked for |
-| 6 | Groups | Directory and detail restyled toward the split view: search, avatars, gradient cover, moderator row, styled tabs, the ownership policy box, member rows with role badges; group create form |
-| 7 | Feed, Profile, Account, Sign in | Feed and Profile with real avatars; the Account profile section redone (the M9 follow-up); Sign in restyled |
+| 3 | Group profile & logo | `/groups/:slug/edit` for the owner and moderators: name, description, visibility (the slug never changes), logo upload/remove (same checks, cleaning and storage as profile photos); the logo on event cards, the event page, the directory and the group page; a default group icon; an "Edit group" button on the group page (user's request, before Events) |
+| 4 | Events | Header with the live indicator; All / Going / Hosting tabs (Going needs a new filter); city and venue search; category chips with photos (all six); date picker; event cards with photo, badges, host avatar, description, attendee avatars and inline Join; restyled Load more |
+| 5 | Search & filters | Date range; filter by group; free-text search (title and description); events near a chosen city within a distance; filters kept in the URL so a search can be shared (user's request, after Events) |
+| 6 | Event detail | Breadcrumb; photo hero; action bar with host avatar and Join/Going toggle; info panel with the **map** (Google in dev, per the mapping plan); chat with bubbles, avatars, timestamps, connection indicator and a Reply button; attendee sidebar with Host/You tags |
+| 7 | Create event | Host-as chips; category picker with photos; restyled date and place fields (with the screen-reader fixes from the location PR); Public/Private cards; limit switch + stepper; live preview card. Drafts, recurring events and editing stay out unless asked for |
+| 8 | Groups | Directory and detail restyled toward the split view: search, avatars, gradient cover, moderator row, styled tabs, the ownership policy box, member rows with role badges; group create form |
+| 9 | Feed, Profile, Account, Sign in | Feed and Profile with real avatars; the Account profile section redone (the M9 follow-up); Sign in restyled |
 
 
 ## Summary
