@@ -40,7 +40,7 @@
             <p>Erases your profile and sign-in methods. Your chat messages stay, shown as "Deleted user".</p>
         </div>
         <form hx-post="/account/delete" hx-target="\#account-data-fragment" hx-swap="outerHTML"
-              hx-confirm="Delete your ExpatEvents account? This can't be undone once it's processed."
+              hx-confirm="Delete your ExpatEvents account?" data-confirm-detail="This can't be undone once it's processed." data-confirm-ok="Delete account" data-confirm-cancel="Keep account"
               method="post" action="/account/delete">
             <button type="submit" class="btn btn-danger-outline btn-sm">Delete account</button>
         </form>

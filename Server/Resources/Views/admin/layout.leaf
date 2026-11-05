@@ -130,44 +130,24 @@
     </div>
 </div>
 
-<dialog id="admin-confirm" aria-labelledby="admin-confirm-title" aria-describedby="admin-confirm-message" class="w-[min(28rem,calc(100vw-2rem))] rounded-2xl p-0 shadow-2xl backdrop:bg-slate-900/50">
+<dialog id="admin-confirm" data-confirm-dialog role="alertdialog" aria-labelledby="admin-confirm-title" aria-describedby="admin-confirm-message" class="w-[min(28rem,calc(100vw-2rem))] rounded-2xl p-0 shadow-2xl backdrop:bg-slate-900/50">
     <div class="p-6">
         <div class="flex gap-4">
             <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rose-100 text-rose-600">
                 <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
             </span>
-            <div>
+            <div class="min-w-0 break-words">
                 <h2 id="admin-confirm-title" class="text-base font-semibold text-slate-900">Are you sure?</h2>
-                <p class="mt-1 text-sm text-slate-600" id="admin-confirm-message"></p>
+                <p class="mt-1 text-sm text-slate-600" id="admin-confirm-message" data-confirm-part="question"></p>
+                <p class="mt-1 text-sm text-slate-500" data-confirm-part="detail" hidden></p>
             </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
-            <button type="button" id="admin-confirm-cancel" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-            <button type="button" id="admin-confirm-ok" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Yes, continue</button>
+            <button type="button" id="admin-confirm-cancel" data-confirm-part="cancel" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+            <button type="button" id="admin-confirm-ok" data-confirm-part="ok" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Yes, continue</button>
         </div>
     </div>
 </dialog>
-<script>
-    // hx-confirm questions are shown in the dialog above instead of the
-    // browser's own box. issueRequest(true) sends the request without the
-    // browser box. Requests without a question pass straight through.
-    // Added once: htmx re-runs body scripts when it restores a page from
-    // its history cache (Back after a filter changed the address).
-    if (!window.adminConfirmReady) {
-    window.adminConfirmReady = true;
-    document.body.addEventListener('htmx:confirm', function (evt) {
-        var dialog = document.getElementById('admin-confirm');
-        if (!evt.detail.question || !dialog || typeof dialog.showModal !== 'function') { return; }
-        evt.preventDefault();
-        document.getElementById('admin-confirm-message').textContent = evt.detail.question;
-        var ok = document.getElementById('admin-confirm-ok');
-        var cancel = document.getElementById('admin-confirm-cancel');
-        function close() { ok.onclick = null; cancel.onclick = null; dialog.close(); }
-        ok.onclick = function () { close(); evt.detail.issueRequest(true); };
-        cancel.onclick = close;
-        dialog.showModal();
-    });
-    }
-</script>
+<script src="/js/confirm-dialog.js"></script>
 </body>
 </html>

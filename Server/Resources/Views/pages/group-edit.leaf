@@ -31,7 +31,7 @@
             </div>
         </form>
         #if(hasLogo):
-        <form method="post" action="/groups/#(group.id)/logo/remove" hx-post="/groups/#(group.id)/logo/remove" hx-confirm="Remove the group's logo?" style="margin-top:10px;">
+        <form method="post" action="/groups/#(group.id)/logo/remove" hx-post="/groups/#(group.id)/logo/remove" hx-confirm="Remove the group's logo?" data-confirm-detail="The default group icon will show instead." data-confirm-ok="Remove logo" style="margin-top:10px;">
             <button type="submit" class="btn btn-danger-outline btn-sm">Remove logo</button>
         </form>
         #endif

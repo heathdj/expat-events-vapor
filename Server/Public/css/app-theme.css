@@ -85,3 +85,22 @@ a.btn{text-decoration:none;}
 .ds-photo-option-off{cursor:default;opacity:.6;}
 .ds-photo-radio-off{width:16px;height:16px;border-radius:999px;border:1.5px solid var(--line);flex-shrink:0;}
 .ds-photo-upload{border-top:1px solid var(--line);padding-top:16px;}
+
+/* Confirm dialog for hx-confirm (js/confirm-dialog.js): a card in the
+ * canvas style over a tinted, blurred backdrop. Not from the canvas,
+ * which has no dialog; built from its tokens. */
+.btn-danger{background:oklch(50% 0.19 25);color:#fff;box-shadow:0 6px 18px -6px oklch(50% 0.19 25 / 0.5);}
+.btn-danger:hover{background:oklch(45% 0.18 25);}
+.app-confirm{width:min(28rem,calc(100vw - 2rem));padding:0;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);color:var(--ink);box-shadow:var(--shadow-md),0 30px 60px -20px rgba(20,30,60,.35);font-family:var(--font-body);}
+.app-confirm::backdrop{background:rgba(24,42,115,.38);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);}
+.app-confirm[open]{animation:app-confirm-in .16s ease-out;}
+@keyframes app-confirm-in{from{opacity:0;transform:translateY(6px) scale(.98);}to{opacity:1;transform:none;}}
+@media (prefers-reduced-motion: reduce){.app-confirm[open]{animation:none;}}
+.app-confirm-body{display:flex;gap:16px;padding:24px 24px 8px;}
+.app-confirm-body>div{min-width:0;overflow-wrap:anywhere;}
+.app-confirm-icon{flex:none;display:grid;place-items:center;width:42px;height:42px;border-radius:999px;background:var(--danger-soft);color:oklch(50% 0.19 25);}
+.app-confirm-icon svg{width:22px;height:22px;}
+.app-confirm-question{margin:0;font-family:var(--font-display);font-size:18px;font-weight:600;line-height:1.3;color:var(--ink);}
+.app-confirm-detail{margin:6px 0 0;font-size:14px;line-height:1.5;color:var(--ink-soft);}
+.app-confirm-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:16px 24px 22px;}
+.app-confirm .btn:focus-visible{outline:2px solid var(--brand-2);outline-offset:2px;}
