@@ -87,6 +87,7 @@ Extracted from the canvas and committed to `Server/Public/design/` (replaced by 
 
 - `logo.png` — the ExpatEvents mark used in the nav brand lockup (128×128, transparent).
 - `avatar-placeholder.png` — generic user avatar (160×160) used everywhere a real profile photo isn't available yet.
+- `group-placeholder.png` — default group icon (450×450, added in the group profile PR; not from the canvas): three figures in the default avatar's greys, shown wherever a group has no logo.
 - `categories/{culture,travel,food,music,drinks,film}.jpg` — one placeholder photo per `EventCategory` case, used as event-card thumbnails, category picker images on the create-event form, and a couple of group-cover images in the canvas mockup.
 
 **Update 2026-10-31**: the files above were the design tool's own placeholder images. The user has since supplied the real assets (same logo mark, a larger default avatar, and real photos for all six categories) and confirmed they're cleared for production; they replace the placeholders in the theme foundation PR (see `docs/design-audit.md` §0).

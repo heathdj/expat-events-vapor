@@ -8,9 +8,15 @@
     <p class="text-sm text-gray-500 mt-1">#(event.venueAddress)</p>
     <p class="text-sm text-gray-700 mt-1" data-event-date>#eventDate(event.date, "long", event.timeZone)</p>
     #if(event.hostUserID):
-    <p class="text-sm text-gray-500">Hosted by <a href="/profile/#(event.hostUserID)" class="hover:underline">#(event.hostDisplayName)</a></p>
+    <p class="text-sm text-gray-500 mt-2 flex items-center gap-2">
+        <img referrerpolicy="no-referrer" src="#avatarURL(event.hostPhotoURL)" alt="" class="h-8 w-8 rounded-full object-cover">
+        <span>Hosted by <a href="/profile/#(event.hostUserID)" class="hover:underline">#(event.hostDisplayName)</a></span>
+    </p>
     #else:
-    <p class="text-sm text-gray-500">Hosted by #(event.hostDisplayName)</p>
+    <p class="text-sm text-gray-500 mt-2 flex items-center gap-2">
+        <img referrerpolicy="no-referrer" src="#groupLogoURL(event.hostPhotoURL)" alt="" class="h-8 w-8 rounded-full object-cover" data-host-logo>
+        <span>Hosted by #(event.hostDisplayName)</span>
+    </p>
     #endif
     <p class="mt-4 text-gray-700">#(event.description)</p>
 

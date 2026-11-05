@@ -15,7 +15,14 @@
         <span class="text-xs uppercase tracking-wide text-gray-500">#(event.category)</span>
     </div>
     <p class="text-sm text-gray-700 mt-1">#eventDate(event.date, "short", event.timeZone)</p>
-    <p class="text-sm text-gray-500 mt-1">#(event.cityAddress) — hosted by #(event.hostDisplayName)</p>
+    <p class="text-sm text-gray-500 mt-1 flex items-center gap-2">
+        #if(event.isGroupHosted):
+        <img referrerpolicy="no-referrer" src="#groupLogoURL(event.hostPhotoURL)" alt="" class="h-6 w-6 rounded-full object-cover" data-host-logo>
+        #else:
+        <img referrerpolicy="no-referrer" src="#avatarURL(event.hostPhotoURL)" alt="" class="h-6 w-6 rounded-full object-cover">
+        #endif
+        <span>#(event.cityAddress) — hosted by #(event.hostDisplayName)</span>
+    </p>
     <p class="text-sm text-gray-400 mt-1">#(event.attendeeCount) attending</p>
 </a>
 #endfor

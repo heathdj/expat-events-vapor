@@ -21,6 +21,8 @@ func routes(_ app: Application) throws {
     try app.register(collection: AdminWebController())
     // Theme PR 2: uploaded profile photos.
     try app.register(collection: PhotoUploadsController())
+    // Theme PR 3: editing a group's profile and logo.
+    try app.register(collection: GroupProfileWebController())
 
     // `/api/v1` — bearer-token authenticated, wrapped in APIErrorMiddleware
     // so every error response is the shared `{code, message}` shape

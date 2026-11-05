@@ -10,9 +10,15 @@
   see that partial's own doc comment.
 -->
 <div class="bg-white border border-gray-200 rounded-lg p-6" x-data="{ tab: 'events' }">
-    <div>
-        <h1 class="text-2xl font-semibold">#(group.name)</h1>
-        <p class="text-sm text-gray-500 mt-1">#(group.memberCount) members — owned by #(group.ownerDisplayName)</p>
+    <div class="flex items-center gap-4">
+        <img referrerpolicy="no-referrer" src="#groupLogoURL(group.avatarURL)" alt="" class="h-16 w-16 rounded-full object-cover" data-group-logo>
+        <div class="flex-1">
+            <h1 class="text-2xl font-semibold">#(group.name)</h1>
+            <p class="text-sm text-gray-500 mt-1">#(group.memberCount) members — owned by #(group.ownerDisplayName)</p>
+        </div>
+        #if(canManage):
+        <a href="/groups/#(group.slug)/edit" class="btn btn-outline btn-sm">Edit group</a>
+        #endif
     </div>
 
     <div class="mt-6 border-b border-gray-200 flex gap-4 text-sm">

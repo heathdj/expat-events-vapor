@@ -1,0 +1,84 @@
+#extend("layouts/base"):
+#export("body"):
+<!--
+  Theme PR 3: the group's owner and moderators edit its details and logo.
+  Uses the design tokens like the account page; the Groups restyle comes
+  later. The group's web address (slug) never changes on a rename.
+-->
+<div class="ds-page-head">
+    <h1>Edit #(group.name)</h1>
+    <p><a href="/groups/#(group.slug)">Back to the group</a></p>
+</div>
+#if(notice):
+<div class="ds-alert ds-alert-success" role="status">#(notice)</div>
+#endif
+
+<div class="ds-account-layout">
+    <div class="card ds-account-block" style="padding:24px 26px;" id="logo">
+        <div class="ds-section-title">Logo</div>
+        <img referrerpolicy="no-referrer" src="#groupLogoURL(group.avatarURL)" alt="Current group logo" class="ds-avatar ds-avatar-lg" style="width:96px;height:96px;margin-bottom:14px;" data-group-logo>
+        #if(logoError):
+        <div class="ds-alert ds-alert-error" role="alert" data-logo-error>#(logoError)</div>
+        #endif
+        <form method="post" action="/groups/#(group.id)/logo" enctype="multipart/form-data" x-data="{ tooBig: false }"
+              @submit="if ($refs.file.files[0] && $refs.file.files[0].size > 2097152) { $event.preventDefault(); tooBig = true }">
+            <label class="ds-label" for="logo-file">Upload a logo</label>
+            <p class="ds-hint">JPEG, PNG or WebP, up to 2 MB and 4096 pixels a side. It's shown as a circle on the group's events.</p>
+            <div class="ds-alert ds-alert-error" role="alert" x-cloak x-show="tooBig">That image is too large. The limit is 2 MB.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
+                <input id="logo-file" type="file" name="logo" accept="image/jpeg,image/png,image/webp" required x-ref="file" @change="tooBig = false">
+                <button type="submit" class="btn btn-outline btn-sm">Upload</button>
+            </div>
+        </form>
+        #if(hasLogo):
+        <form method="post" action="/groups/#(group.id)/logo/remove" hx-post="/groups/#(group.id)/logo/remove" hx-confirm="Remove the group's logo?" style="margin-top:10px;">
+            <button type="submit" class="btn btn-danger-outline btn-sm">Remove logo</button>
+        </form>
+        #endif
+    </div>
+
+    <div class="card ds-account-block" style="padding:24px 26px;">
+        <div class="ds-section-title">Details</div>
+        #if(errorMessage):
+        <div class="ds-alert ds-alert-error" role="alert" data-edit-error>#(errorMessage)</div>
+        #endif
+        <form method="post" action="/groups/#(group.id)/edit">
+            <div class="ds-field">
+                <label class="ds-label" for="group-name">Name</label>
+                <input class="ds-input" id="group-name" name="name" value="#(name)" maxlength="80" required>
+            </div>
+            <div class="ds-field">
+                <label class="ds-label" for="group-description">Description</label>
+                <textarea class="ds-textarea" id="group-description" name="description" maxlength="2000" required>#(description)</textarea>
+            </div>
+            #if(isOwner):
+            <div class="ds-field">
+                <label class="ds-label" for="group-visibility">Who can join</label>
+                <select class="ds-input" id="group-visibility" name="visibility" aria-describedby="group-visibility-hint">
+                    #if(isPublic):
+                    <option value="public" selected>Public: anyone can find and join</option>
+                    <option value="inviteOnly">Invite-only</option>
+                    #else:
+                    <option value="public">Public: anyone can find and join</option>
+                    <option value="inviteOnly" selected>Invite-only</option>
+                    #endif
+                </select>
+                <p class="ds-hint" id="group-visibility-hint">Making the group public lets anyone join and see its members-only events. Making it invite-only hides it from the directory and stops new members joining (invitations aren't available yet).</p>
+            </div>
+            #else:
+            <div class="ds-field" data-visibility-readonly>
+                <div class="ds-label">Who can join</div>
+                #if(isPublic):
+                <p>Public: anyone can find and join</p>
+                #else:
+                <p>Invite-only</p>
+                #endif
+                <p class="ds-hint">Only the group's owner can change this.</p>
+            </div>
+            #endif
+            <button type="submit" class="btn btn-accent btn-sm">Save details</button>
+        </form>
+    </div>
+</div>
+#endexport
+#endextend
