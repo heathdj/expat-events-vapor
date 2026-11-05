@@ -116,4 +116,42 @@ final class ThemeTests: XCTestCase {
             }
         }
     }
+
+    /// Confirm-dialog PR: every page on the main layout carries the themed
+    /// dialog and its script, so hx-confirm questions use it instead of the
+    /// browser's box; confirmations carry their own button labels; the
+    /// admin site uses the same script with its own dialog.
+    func testConfirmationsUseTheThemedDialog() async throws {
+        try await withApp { app in
+            let member = try await makeUser(db: app.db, email: "dialog@example.com", displayName: "Dana")
+            let admin = try await makeUser(db: app.db, email: "dialog-admin@example.com", displayName: "Ada", role: .admin)
+
+            try await app.test(.GET, "/account", headers: ["Cookie": try await sessionCookie(for: member, db: app.db)]) { res async in
+                let html = res.body.string
+                XCTAssertTrue(html.contains(#"<dialog class="app-confirm" data-confirm-dialog role="alertdialog"#))
+                for part in ["question", "detail", "ok", "cancel"] {
+                    XCTAssertTrue(html.contains(#"data-confirm-part="\#(part)""#), "Site dialog has its \(part) part.")
+                }
+                XCTAssertTrue(html.contains(#"<script src="/js/confirm-dialog.js"></script>"#))
+                XCTAssertTrue(html.contains(#"hx-confirm="Delete your ExpatEvents account?""#))
+                XCTAssertTrue(html.contains(#"data-confirm-ok="Delete account""#))
+            }
+            try await app.test(.GET, "/events") { res async in
+                XCTAssertTrue(res.body.string.contains("data-confirm-dialog"), "Visitors' pages have it too.")
+            }
+            try await app.test(.GET, "/admin", headers: ["Cookie": try await sessionCookie(for: admin, db: app.db)]) { res async in
+                let html = res.body.string
+                XCTAssertTrue(html.contains(#"<dialog id="admin-confirm" data-confirm-dialog"#))
+                for part in ["question", "detail", "ok", "cancel"] {
+                    XCTAssertTrue(html.contains(#"data-confirm-part="\#(part)""#), "Admin dialog has its \(part) part.")
+                }
+                XCTAssertTrue(html.contains(#"<script src="/js/confirm-dialog.js"></script>"#))
+                XCTAssertFalse(html.contains("adminConfirmReady"), "The old inline copy is gone.")
+            }
+            try await app.test(.GET, "/js/confirm-dialog.js") { res async in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertTrue(res.body.string.contains("htmx:confirm"))
+            }
+        }
+    }
 }
