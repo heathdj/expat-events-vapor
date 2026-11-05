@@ -46,6 +46,37 @@ final class User: Model, Content, @unchecked Sendable {
     @OptionalField(key: "erased_at")
     var erasedAt: Date?
 
+    /// Theme PR 2: the inputs to `photoURL`, which stays the one value
+    /// every page and DTO shows (`ProfilePhotoService.refresh` keeps it in
+    /// step). nil source means automatic: Google, then an upload, then the
+    /// default avatar. Gravatar is opt-in.
+    /// Stored as plain text and read through `photoSource`, so an
+    /// unexpected value can't make the whole row fail to load.
+    @OptionalField(key: "photo_source")
+    var photoSourceValue: String?
+
+    var photoSource: PhotoSource? {
+        get { photoSourceValue.flatMap(PhotoSource.init(rawValue:)) }
+        set { photoSourceValue = newValue?.rawValue }
+    }
+
+    /// From the Google sign-in token's `picture` claim, refreshed on every
+    /// Google sign-in. Apple sign-in provides no photo.
+    @OptionalField(key: "google_photo_url")
+    var googlePhotoURL: String?
+
+    /// Where the member's uploaded photo is served (`PhotoStorage`).
+    @OptionalField(key: "uploaded_photo_path")
+    var uploadedPhotoPath: String?
+
+    /// Whether gravatar.com has a photo for this email; nil = never checked.
+    /// Only ever checked for members who chose Gravatar.
+    @OptionalField(key: "gravatar_available")
+    var gravatarAvailable: Bool?
+
+    @OptionalField(key: "gravatar_checked_at")
+    var gravatarCheckedAt: Date?
+
     @Children(for: \.$user)
     var oauthIdentities: [OAuthIdentity]
 

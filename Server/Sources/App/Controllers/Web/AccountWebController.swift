@@ -31,6 +31,30 @@ struct AccountWebController: RouteCollection {
         let startEditing: Bool
         let hasPendingDeletion: Bool
         let deletionRequestedOn: String?
+        /// Theme PR 2: the profile photo card.
+        let photoOptions: [PhotoOption]
+        let hasUpload: Bool
+        let photoError: String?
+        let photoNotice: String?
+    }
+
+    /// One choice in the photo card. `previewURL` is what it would show;
+    /// unavailable choices explain why instead of offering a radio button.
+    struct PhotoOption: Encodable {
+        let value: String
+        let label: String
+        let detail: String
+        let previewURL: String?
+        let isSelected: Bool
+        let isAvailable: Bool
+    }
+
+    struct PhotoSourceForm: Content {
+        let source: String
+    }
+
+    struct PhotoUploadForm: Content {
+        let photo: File?
     }
 
     struct ProfileForm: Content {
@@ -47,12 +71,74 @@ struct AccountWebController: RouteCollection {
         authenticated.post("account", "profile", use: updateProfile)
         authenticated.post("account", "export", use: export)
         authenticated.post("account", "delete", use: requestDeletion)
+        // Theme PR 2. The upload route accepts a larger body than Vapor's
+        // 16 KB default: room above the service's 2 MB limit, so a too-big
+        // photo gets the friendly message rather than Vapor's bare 413.
+        authenticated.on(.POST, "account", "photo", body: .collect(maxSize: "10mb"), use: uploadPhoto)
+        authenticated.post("account", "photo", "source", use: choosePhotoSource)
+        authenticated.post("account", "photo", "remove", use: removePhoto)
     }
+
+    @Sendable
+    func uploadPhoto(req: Request) async throws -> Response {
+        let user = try req.auth.require(User.self)
+        let form = try? req.content.decode(PhotoUploadForm.self)
+        let data = form?.photo.map { Data($0.data.readableBytesView) } ?? Data()
+        return try await photoAction(req: req, user: user, notice: "uploaded") {
+            try await req.profilePhotos.upload(data, for: user)
+        }
+    }
+
+    @Sendable
+    func choosePhotoSource(req: Request) async throws -> Response {
+        let user = try req.auth.require(User.self)
+        guard let source = (try? req.content.decode(PhotoSourceForm.self)).flatMap({ PhotoSource(rawValue: $0.source) }) else {
+            return try await renderPage(req: req, user: user, profileError: nil, photoError: "Choose a photo.")
+                .encodeResponse(status: .badRequest, for: req)
+        }
+        return try await photoAction(req: req, user: user, notice: "chosen") {
+            try await req.profilePhotos.choose(source, for: user)
+        }
+    }
+
+    @Sendable
+    func removePhoto(req: Request) async throws -> Response {
+        let user = try req.auth.require(User.self)
+        return try await photoAction(req: req, user: user, notice: "removed") {
+            try await req.profilePhotos.removeUpload(for: user)
+        }
+    }
+
+    /// Success redirects back with a fixed notice; a rejected photo
+    /// re-renders the page with the reason.
+    private func photoAction(req: Request, user: User, notice: String, _ action: () async throws -> Void) async throws -> Response {
+        do {
+            try await action()
+        } catch let error as APIError {
+            return try await renderPage(req: req, user: user, profileError: nil, photoError: error.message)
+                .encodeResponse(status: .unprocessableEntity, for: req)
+        }
+        let target = "/account?photo=\(notice)#photo"
+        // "Remove" posts over htmx (for its hx-confirm): send the whole
+        // page there rather than swapping the account page into the form.
+        if req.headers.first(name: "HX-Request") != nil {
+            let response = Response(status: .ok)
+            response.headers.replaceOrAdd(name: "HX-Redirect", value: target)
+            return response
+        }
+        return req.redirect(to: target)
+    }
+
+    static let photoNotices = [
+        "uploaded": "Photo uploaded. It's now your profile photo.",
+        "chosen": "Profile photo updated.",
+        "removed": "Uploaded photo removed.",
+    ]
 
     @Sendable
     func page(req: Request) async throws -> View {
         let user = try req.auth.require(User.self)
-        return try await renderPage(req: req, user: user, profileError: nil)
+        return try await renderPage(req: req, user: user, profileError: nil, photoError: nil)
     }
 
     @Sendable
@@ -63,7 +149,7 @@ struct AccountWebController: RouteCollection {
             try await AccountService(db: req.db).updateDisplayName(form.displayName, for: user)
             return req.redirect(to: "/account")
         } catch let error as APIError {
-            let response = try await renderPage(req: req, user: user, profileError: error.message).encodeResponse(for: req)
+            let response = try await renderPage(req: req, user: user, profileError: error.message, photoError: nil).encodeResponse(for: req)
             response.status = .unprocessableEntity
             return response
         }
@@ -104,7 +190,7 @@ struct AccountWebController: RouteCollection {
         )).encodeResponse(for: req)
     }
 
-    private func renderPage(req: Request, user: User, profileError: String?) async throws -> View {
+    private func renderPage(req: Request, user: User, profileError: String?, photoError: String?) async throws -> View {
         let userID = try user.requireID()
         let subscription = try await PlanLimitsService(db: req.db).subscription(for: userID)
         let pending = try await AccountService(db: req.db).pendingDeletionRequest(for: userID)
@@ -118,8 +204,46 @@ struct AccountWebController: RouteCollection {
             profileError: profileError,
             startEditing: profileError != nil,
             hasPendingDeletion: pending != nil,
-            deletionRequestedOn: pending?.requestedAt.map(Self.displayDateFormatter.string(from:))
+            deletionRequestedOn: pending?.requestedAt.map(Self.displayDateFormatter.string(from:)),
+            photoOptions: Self.photoOptions(for: user),
+            hasUpload: user.uploadedPhotoPath != nil,
+            photoError: photoError,
+            photoNotice: (try? req.query.get(String.self, at: "photo")).flatMap { Self.photoNotices[$0] }
         ))
+    }
+
+    /// Automatic first, then each source (available or not, so members see
+    /// what they could use), then the default icon.
+    static func photoOptions(for user: User) -> [PhotoOption] {
+        let available = Dictionary(ProfilePhotoService.available(user).map { ($0.0, $0.1) }, uniquingKeysWith: { first, _ in first })
+        // A chosen source that's no longer available (say, the upload was
+        // removed) falls back to automatic, so that's what shows as chosen.
+        let chosen = user.photoSource ?? .automatic
+        let selected: PhotoSource = (chosen == .automatic || chosen == .none || available[chosen] != nil) ? chosen : .automatic
+        let automatic = ProfilePhotoService.available(user).first(where: { $0.0 != .gravatar })?.1
+        func option(_ source: PhotoSource, _ label: String, detail: String) -> PhotoOption {
+            let url = available[source]
+            return PhotoOption(value: source.rawValue, label: label, detail: detail,
+                               previewURL: url, isSelected: selected == source && url != nil, isAvailable: url != nil)
+        }
+        // Gravatar is opt-in, so it's always offered: choosing it is what
+        // asks gravatar.com (and says so if there's none).
+        let gravatarURL = available[.gravatar]
+        let gravatar = PhotoOption(
+            value: PhotoSource.gravatar.rawValue, label: "Gravatar",
+            detail: "The Gravatar for your email address. Choosing it asks gravatar.com, and visitors' browsers load it from there.",
+            previewURL: gravatarURL, isSelected: selected == .gravatar && gravatarURL != nil, isAvailable: true
+        )
+        return [
+            PhotoOption(value: PhotoSource.automatic.rawValue, label: "Automatic",
+                        detail: "Your Google photo, then your uploaded photo, then the default.",
+                        previewURL: automatic, isSelected: selected == .automatic, isAvailable: true),
+            option(.google, "Google photo", detail: "From your Google account, updated each time you sign in with Google."),
+            gravatar,
+            option(.upload, "Uploaded photo", detail: "The photo you uploaded below."),
+            PhotoOption(value: PhotoSource.none.rawValue, label: "Default icon", detail: "Don't show a photo.",
+                        previewURL: nil, isSelected: selected == .none, isAvailable: true),
+        ]
     }
 
     static let displayDateFormatter: DateFormatter = {

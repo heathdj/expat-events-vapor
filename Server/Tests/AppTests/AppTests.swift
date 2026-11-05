@@ -1747,16 +1747,17 @@ final class AppTests: XCTestCase {
     }
 
     /// M7's home-page addition: a signed-in visitor hitting "/" never
-    /// sees the marketing page -- redirected straight to "/feed", the
-    /// same place a fresh sign-in now lands (AuthWebController).
-    func testHomePageRedirectsSignedInVisitorToFeed() async throws {
+    /// sees the marketing page -- redirected straight to "/events" (the
+    /// feed until the theme foundation checkpoint), the same place a fresh
+    /// sign-in lands (AuthWebController).
+    func testHomePageRedirectsSignedInVisitorToEvents() async throws {
         try await withApp { app in
             let user = try await makeUser(db: app.db, email: "m7-home-signed-in@example.com")
             let cookie = try await sessionCookie(for: user, db: app.db)
 
             try await app.test(.GET, "/", headers: ["Cookie": cookie]) { res async in
                 XCTAssertEqual(res.status, .seeOther)
-                XCTAssertEqual(res.headers.first(name: .location), "/feed")
+                XCTAssertEqual(res.headers.first(name: .location), "/events")
             }
         }
     }

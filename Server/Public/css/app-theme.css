@@ -73,3 +73,15 @@ a.btn{text-decoration:none;}
   .app-footer-inner{padding:40px 16px 28px;}
   .app-footer-grid{grid-template-columns:1fr;gap:28px;}
 }
+
+/* Theme PR 2: the profile photo card on /account (extrapolated; the
+   canvas's Account artboard has no photo picker). */
+.ds-photo-options{border:none;margin:0 0 16px;padding:0;display:flex;flex-direction:column;gap:8px;}
+.ds-photo-option{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1.5px solid var(--line);border-radius:var(--r-sm);cursor:pointer;}
+.ds-photo-option:has(input:checked){border-color:var(--accent);background:var(--accent-soft);}
+.ds-photo-option input{accent-color:var(--accent);width:16px;height:16px;flex-shrink:0;}
+.ds-photo-option b{display:block;font-size:14px;color:var(--ink);}
+.ds-photo-option small{display:block;font-size:12.5px;color:var(--ink-faint);}
+.ds-photo-option-off{cursor:default;opacity:.6;}
+.ds-photo-radio-off{width:16px;height:16px;border-radius:999px;border:1.5px solid var(--line);flex-shrink:0;}
+.ds-photo-upload{border-top:1px solid var(--line);padding-top:16px;}

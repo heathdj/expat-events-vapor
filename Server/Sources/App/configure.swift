@@ -14,6 +14,7 @@ public func configure(_ app: Application) async throws {
     try configureJWT(app)
     app.chatRoomRegistry = ChatRoomRegistry()
     configureLocation(app)
+    configurePhotos(app)
 
     app.views.use(.leaf)
     app.leaf.tags["eventDate"] = EventDateTag()
@@ -71,6 +72,23 @@ private func configureDatabase(_ app: Application) throws {
 
 private func configureSessions(_ app: Application) throws {
     app.sessions.use(.fluent)
+    // Vapor's default session cookie, plus HttpOnly (scripts can't read
+    // it) and, in production, Secure (HTTPS only). Found by the profile
+    // photos review: members' uploaded files are now served from this
+    // origin too.
+    let isProduction = app.environment == .production
+    app.sessions.configuration.cookieFactory = { sessionID in
+        HTTPCookies.Value(
+            string: sessionID.string,
+            expires: Date(timeIntervalSinceNow: 60 * 60 * 24 * 7),
+            maxAge: nil,
+            domain: nil,
+            path: "/",
+            isSecure: isProduction,
+            isHTTPOnly: true,
+            sameSite: .lax
+        )
+    }
     app.middleware.use(app.sessions.middleware)
     app.migrations.add(SessionRecord.migration)
 }
@@ -131,6 +149,8 @@ private func registerMigrations(_ app: Application) {
     app.migrations.add(AddFeedbackContactFields())
     // Location lookup.
     app.migrations.add(AddEventLocationFields())
+    // Theme PR 2: profile photos.
+    app.migrations.add(AddUserPhotoFields())
 }
 
 // MARK: - Commands

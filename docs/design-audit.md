@@ -26,6 +26,8 @@ Status key: ✅ built to the design · 🟡 partly built · ❌ not built (the p
 
 **Update (foundation PR, 2026-11-04)**: the real assets are in `Public/design/` (category photos resized to at most 1,200px wide; the drinks photo is only 640px wide and may look soft in a large hero), every page on `layouts/base.leaf` has the canvas's gradient nav (logo + wordmark, pill links with the current section highlighted, "+ Create Event", the user pill with photo and name opening an account menu, Sign in and Pricing for visitors, a phone menu) and the canvas footer, the page background is the canvas `--bg`, and the canvas tokens are Tailwind theme values (`bg-app`, `text-ink`, `rounded-card`, `font-display`, ...). Feed, Profile and Account show photos through one helper (`#avatarURL`), and the admin sidebar uses the real logo. Page contents are unchanged until their own PRs.
 
+**Update (profile photos PR)**: built as planned (PR 2 below); see `MILESTONES.md`. Sign-in now lands on Events, and Feed is also in the user menu (both requested at the foundation checkpoint).
+
 **The theme work, in order (user's decision: one PR per area)**:
 
 | # | PR | Covers |

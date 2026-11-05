@@ -40,27 +40,23 @@ struct SeedCommand: Command {
         let alice = try await findOrCreateUser(
             db: db,
             email: "heathdj@gmail.com",
-            displayName: "Alice Nakamura",
-            photoURL: "https://randomuser.me/api/portraits/women/65.jpg"
+            displayName: "Alice Nakamura"
         )
         let bob = try await findOrCreateUser(
             db: db,
             email: "bob@example.com",
-            displayName: "Bob Alavi",
-            photoURL: "https://randomuser.me/api/portraits/men/20.jpg"
+            displayName: "Bob Alavi"
         )
         let carol = try await findOrCreateUser(
             db: db,
             email: "carol@example.com",
-            displayName: "Carol Odinaka",
-            photoURL: "https://randomuser.me/api/portraits/women/33.jpg"
+            displayName: "Carol Odinaka"
         )
 
         let dana = try await findOrCreateUser(
             db: db,
             email: "dana@example.com",
-            displayName: "Dana Kowalski",
-            photoURL: "https://randomuser.me/api/portraits/women/48.jpg"
+            displayName: "Dana Kowalski"
         )
 
         // Alice and Dana are Premium so each can own a group (M6);
@@ -86,8 +82,7 @@ struct SeedCommand: Command {
         let erin = try await findOrCreateUser(
             db: db,
             email: "erin@example.com",
-            displayName: "Erin Lindqvist",
-            photoURL: "https://randomuser.me/api/portraits/women/12.jpg"
+            displayName: "Erin Lindqvist"
         )
         _ = try await AccountService(db: db).requestDeletion(for: erin.requireID())
 
@@ -196,14 +191,21 @@ struct SeedCommand: Command {
         console.print("Seed complete: 5 users (Alice is an admin; Erin has a pending deletion request), 2 groups, 3 events, 3 follows, 2 joins.")
     }
 
-    private func findOrCreateUser(db: Database, email: String, displayName: String, photoURL: String?) async throws -> User {
+    /// Seeded people have no photo of their own (theme PR 2): they show
+    /// the default avatar, or a Gravatar once the dev signs in as
+    /// themselves. Earlier seeds used randomuser.me photos of real people,
+    /// which are cleared from existing rows here.
+    private func findOrCreateUser(db: Database, email: String, displayName: String) async throws -> User {
         if let existing = try await User.query(on: db).filter(\.$email == email).first() {
+            if existing.photoURL?.hasPrefix("https://randomuser.me/") == true {
+                existing.photoURL = ProfilePhotoService.resolvedPhotoURL(existing)
+                try await existing.save(on: db)
+            }
             return existing
         }
         let user = User(
             displayName: displayName,
             email: email,
-            photoURL: photoURL,
             privacyPolicyVersion: LegalVersions.privacyPolicy,
             termsVersion: LegalVersions.terms,
             consentedAt: Date()

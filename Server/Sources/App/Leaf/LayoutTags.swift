@@ -10,7 +10,10 @@ import Vapor
 
 /// `#avatarURL(photoURL)`: the photo to show for a person, or the default
 /// avatar. Only `https:` URLs and site paths are used, so a stored value
-/// can never become a `javascript:` link in an `src` attribute.
+/// can never become a `javascript:` link in an `src` attribute. Templates
+/// also put `referrerpolicy="no-referrer"` on avatar images: Google's photo
+/// server refuses many requests that carry a Referer (the broken Google
+/// photo found at the profile photos checkpoint).
 struct AvatarURLTag: LeafTag {
     static let placeholder = "/design/avatar-placeholder.png"
 

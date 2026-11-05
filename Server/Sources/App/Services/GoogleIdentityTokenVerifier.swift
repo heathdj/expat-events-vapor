@@ -13,9 +13,12 @@ struct GoogleIdentityTokenVerifier {
         let email: String?
         let emailVerified: String?
         let exp: String
+        /// The Google profile photo (theme PR 2); absent when the member
+        /// has none.
+        let picture: String?
 
         enum CodingKeys: String, CodingKey {
-            case aud, sub, email, exp
+            case aud, sub, email, exp, picture
             case emailVerified = "email_verified"
         }
     }
@@ -23,6 +26,7 @@ struct GoogleIdentityTokenVerifier {
     struct VerifiedIdentity {
         let providerUserID: String
         let email: String?
+        var picture: String? = nil
     }
 
     /// `expectedAudience` is the OAuth web client ID — set via
@@ -51,6 +55,14 @@ struct GoogleIdentityTokenVerifier {
             throw APIError.invalidProviderToken
         }
 
-        return VerifiedIdentity(providerUserID: info.sub, email: info.email)
+        return VerifiedIdentity(providerUserID: info.sub, email: linkableEmail(info), picture: info.picture)
+    }
+
+    /// Only an email Google has verified is used: `AuthService` links a
+    /// sign-in to an existing account by email, so an unverified one could
+    /// claim someone else's account (found while confirming account linking
+    /// during the profile photos PR).
+    static func linkableEmail(_ info: TokenInfoResponse) -> String? {
+        info.emailVerified == "true" ? info.email : nil
     }
 }
