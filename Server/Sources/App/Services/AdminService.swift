@@ -16,6 +16,8 @@ import ExpatEventsAPI
 /// erasure (M9) never leaves personal data behind in the log.
 struct AdminService {
     let db: Database
+    /// Passed on to `AccountService` so erasing deletes an uploaded photo.
+    var photoStorage: (any PhotoStorage)? = nil
 
     static let pageSize = 25
     static let auditPageSize = 50
@@ -616,18 +618,23 @@ struct AdminService {
     /// (`AccountService.process`), inside the same transaction as its
     /// audit row. The audit row's target is the erased user's ID only.
     func processDeletion(_ requestID: UUID, by adminID: UUID, now: Date = Date()) async throws {
-        try await db.transaction { tx in
+        let photo: String? = try await db.transaction { tx -> String? in
             guard let request = try await DeletionRequest.find(requestID, on: tx) else {
                 throw APIError.notFound
             }
-            // `process` locks the request and re-checks it, so a second
+            // `erase` locks the request and re-checks it, so a second
             // click, or `process-deletions` running at the same moment,
             // finds it done and nothing is erased or logged twice.
-            guard try await AccountService(db: tx).process(request, now: now) else {
+            guard let erasure = try await AccountService(db: tx).erase(request, now: now) else {
                 throw APIError(code: "no_change", message: "This request has already been processed.")
             }
             try await Self.audit(Action.deletionProcessed, by: adminID, targetType: "user", targetID: request.$user.id,
                                  metadata: ["requestID": requestID.uuidString], on: tx)
+            return erasure.uploadedPhotoPath
+        }
+        // The photo file goes once the erasure has committed.
+        if let photo, let photoStorage {
+            try? await photoStorage.delete(path: photo)
         }
     }
 

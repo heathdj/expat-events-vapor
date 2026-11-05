@@ -10,6 +10,9 @@ import ExpatEventsAPI
 /// one-service-both-surfaces convention every other domain follows.
 struct AccountService {
     let db: Database
+    /// Where uploaded profile photos live, so erasure can delete the file
+    /// (theme PR 2). nil skips the file (callers without app access).
+    var photoStorage: (any PhotoStorage)? = nil
 
     /// What an erased account's tombstone row shows wherever it's still
     /// referenced (its anonymized chat messages, an owned group's owner
@@ -81,7 +84,11 @@ struct AccountService {
                 createdAt: user.createdAt,
                 privacyPolicyVersion: user.privacyPolicyVersion,
                 termsVersion: user.termsVersion,
-                consentedAt: user.consentedAt
+                consentedAt: user.consentedAt,
+                photoSource: user.photoSource?.rawValue,
+                googlePhotoURL: user.googlePhotoURL,
+                uploadedPhotoURL: user.uploadedPhotoPath,
+                gravatarOptedIn: user.photoSource == .gravatar
             ),
             hostedEvents: try hostedEvents.map {
                 .init(
@@ -180,20 +187,50 @@ struct AccountService {
     /// Returns false, changing nothing, if the request was already
     /// processed: the request row is locked first, so this command and the
     /// admin site's "Erase account now" (M10) can't both erase one account.
+    ///
+    /// Also deletes the account's uploaded photo file, after the erasure.
     @discardableResult
     func process(_ request: DeletionRequest, now: Date = Date()) async throws -> Bool {
+        guard let erasure = try await erase(request, now: now) else { return false }
+        if let path = erasure.uploadedPhotoPath, let photoStorage {
+            try? await photoStorage.delete(path: path)
+        }
+        return true
+    }
+
+    /// What an erasure leaves for the caller to clean up outside the
+    /// database: the uploaded photo file.
+    struct Erasure {
+        let uploadedPhotoPath: String?
+    }
+
+    /// The database part of `process`, in one transaction. Returns nil if
+    /// the request was already processed. A caller with its own transaction
+    /// (the admin site) deletes the photo file after that commits, so a
+    /// rollback can't leave the row pointing at a deleted file.
+    func erase(_ request: DeletionRequest, now: Date = Date()) async throws -> Erasure? {
         let userID = request.$user.id
         let requestID = try request.requireID()
-        return try await db.transaction { tx in
+        return try await db.transaction { tx -> Erasure? in
             try await tx.lockRow(DeletionRequest.schema, id: requestID)
             guard let current = try await DeletionRequest.find(requestID, on: tx), current.processedAt == nil else {
-                return false
+                return nil
             }
-            guard let user = try await User.find(userID, on: tx) else { return false }
+            // Locked too, so an upload finishing at the same moment either
+            // lands first (and its file is deleted below) or sees the
+            // account erased and is refused.
+            try await tx.lockRow(User.schema, id: userID)
+            guard let user = try await User.find(userID, on: tx) else { return nil }
+            let uploadedPhoto = user.uploadedPhotoPath
 
             user.displayName = Self.erasedDisplayName
             user.email = "erased-\(userID.uuidString.lowercased())@erased.invalid"
             user.photoURL = nil
+            user.photoSource = nil
+            user.googlePhotoURL = nil
+            user.uploadedPhotoPath = nil
+            user.gravatarAvailable = nil
+            user.gravatarCheckedAt = nil
             user.erasedAt = now
             try await user.save(on: tx)
 
@@ -238,7 +275,7 @@ struct AccountService {
             current.processedAt = now
             try await current.save(on: tx)
             request.processedAt = now
-            return true
+            return Erasure(uploadedPhotoPath: uploadedPhoto)
         }
     }
 }

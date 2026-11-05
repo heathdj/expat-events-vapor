@@ -67,8 +67,21 @@ public struct AccountDataExportDTO: Codable, Sendable, Equatable {
         public let privacyPolicyVersion: String
         public let termsVersion: String
         public let consentedAt: Date
+        /// Profile photo settings (theme PR 2): which source is chosen
+        /// ("automatic", "google", "gravatar", "upload", "none"), the saved
+        /// Google photo, the uploaded photo's address, and whether the
+        /// member opted in to Gravatar.
+        public let photoSource: String?
+        public let googlePhotoURL: String?
+        public let uploadedPhotoURL: String?
+        public let gravatarOptedIn: Bool
 
-        public init(id: UUID, displayName: String, email: String, photoURL: String?, plan: PlanTier, createdAt: Date?, privacyPolicyVersion: String, termsVersion: String, consentedAt: Date) {
+        public init(id: UUID, displayName: String, email: String, photoURL: String?, plan: PlanTier, createdAt: Date?, privacyPolicyVersion: String, termsVersion: String, consentedAt: Date,
+                    photoSource: String? = nil, googlePhotoURL: String? = nil, uploadedPhotoURL: String? = nil, gravatarOptedIn: Bool = false) {
+            self.photoSource = photoSource
+            self.googlePhotoURL = googlePhotoURL
+            self.uploadedPhotoURL = uploadedPhotoURL
+            self.gravatarOptedIn = gravatarOptedIn
             self.id = id
             self.displayName = displayName
             self.email = email

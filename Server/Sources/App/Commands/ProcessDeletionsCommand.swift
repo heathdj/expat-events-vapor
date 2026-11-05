@@ -15,7 +15,7 @@ struct ProcessDeletionsCommand: Command {
         let application = context.application
         let console = context.console
         try application.eventLoopGroup.any().makeFutureWithTask {
-            let count = try await AccountService(db: application.db).processPendingDeletions()
+            let count = try await AccountService(db: application.db, photoStorage: application.photoStorage).processPendingDeletions()
             console.print("Processed \(count) pending deletion request\(count == 1 ? "" : "s").")
         }.wait()
     }

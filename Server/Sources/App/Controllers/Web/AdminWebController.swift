@@ -976,7 +976,7 @@ struct AdminWebController: RouteCollection {
         let admin = try req.auth.require(User.self)
         let requestID = try Self.uuid(req, "requestID")
         return try await Self.perform(req, back: "/admin/data-requests", section: .dataRequests, notice: "deletion-processed") {
-            try await AdminService(db: req.db).processDeletion(requestID, by: admin.requireID())
+            try await AdminService(db: req.db, photoStorage: req.application.photoStorage).processDeletion(requestID, by: admin.requireID())
         }
     }
 
