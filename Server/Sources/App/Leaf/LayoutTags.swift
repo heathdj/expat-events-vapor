@@ -22,7 +22,7 @@ struct AvatarURLTag: LeafTag {
         return .string(Self.resolve(value))
     }
 
-    static func resolve(_ value: String?) -> String {
+    static func resolve(_ value: String?, placeholder: String = Self.placeholder) -> String {
         guard let value, !value.isEmpty else { return placeholder }
         let lowered = value.lowercased()
         // "/\host" is excluded too: browsers read it as "//host".
@@ -30,6 +30,17 @@ struct AvatarURLTag: LeafTag {
             return value
         }
         return placeholder
+    }
+}
+
+/// `#groupLogoURL(avatarURL)`: a group's logo, or the default group icon
+/// (theme PR 3). Same safety rules as `#avatarURL`.
+struct GroupLogoURLTag: LeafTag {
+    static let placeholder = "/design/group-placeholder.png"
+
+    func render(_ ctx: LeafContext) throws -> LeafData {
+        let value = ctx.parameters.first?.string?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return .string(AvatarURLTag.resolve(value, placeholder: Self.placeholder))
     }
 }
 

@@ -18,6 +18,9 @@ public struct EventSummaryDTO: Codable, Sendable, Equatable, Identifiable {
     /// wall-clock time stored as UTC) or created through the API without
     /// coordinates or a zone. Show those in UTC.
     public let timeZone: String?
+    /// True when a group hosts the event, so `hostPhotoURL` is the group's
+    /// logo (and clients show a group placeholder when it's nil).
+    public let isGroupHosted: Bool
 
     public init(
         id: UUID,
@@ -30,8 +33,10 @@ public struct EventSummaryDTO: Codable, Sendable, Equatable, Identifiable {
         attendeeCount: Int,
         visibility: EventVisibility,
         isCancelled: Bool,
-        timeZone: String? = nil
+        timeZone: String? = nil,
+        isGroupHosted: Bool = false
     ) {
+        self.isGroupHosted = isGroupHosted
         self.id = id
         self.title = title
         self.category = category
@@ -43,6 +48,24 @@ public struct EventSummaryDTO: Codable, Sendable, Equatable, Identifiable {
         self.visibility = visibility
         self.isCancelled = isCancelled
         self.timeZone = timeZone
+    }
+
+    /// Written out so a payload without `isGroupHosted` (an older server,
+    /// or cached JSON) still decodes, as false (review).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        category = try container.decode(EventCategory.self, forKey: .category)
+        date = try container.decode(Date.self, forKey: .date)
+        cityAddress = try container.decode(String.self, forKey: .cityAddress)
+        hostDisplayName = try container.decode(String.self, forKey: .hostDisplayName)
+        hostPhotoURL = try container.decodeIfPresent(String.self, forKey: .hostPhotoURL)
+        attendeeCount = try container.decode(Int.self, forKey: .attendeeCount)
+        visibility = try container.decode(EventVisibility.self, forKey: .visibility)
+        isCancelled = try container.decode(Bool.self, forKey: .isCancelled)
+        timeZone = try container.decodeIfPresent(String.self, forKey: .timeZone)
+        isGroupHosted = try container.decodeIfPresent(Bool.self, forKey: .isGroupHosted) ?? false
     }
 }
 

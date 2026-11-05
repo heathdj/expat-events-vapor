@@ -21,6 +21,7 @@ public func configure(_ app: Application) async throws {
     app.leaf.tags["adminNavLink"] = AdminNavLinkTag()
     // Theme foundation: the shared layout's nav and avatars.
     app.leaf.tags["avatarURL"] = AvatarURLTag()
+    app.leaf.tags["groupLogoURL"] = GroupLogoURLTag()
     app.leaf.tags["currentUser"] = CurrentUserTag()
     app.leaf.tags["navActive"] = NavActiveTag()
     app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))

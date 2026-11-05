@@ -358,7 +358,8 @@ struct EventService {
             attendeeCount: count,
             visibility: event.visibility,
             isCancelled: event.isCancelled,
-            timeZone: event.timeZone
+            timeZone: event.timeZone,
+            isGroupHosted: event.$hostGroup.id != nil
         )
     }
 
