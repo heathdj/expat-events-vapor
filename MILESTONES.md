@@ -217,6 +217,34 @@ Not started — and can't meaningfully proceed without the DigitalOcean/Stripe/A
 - **Found at the checkpoint**: a picked venue showed only its street address (Google's formatted address for a business leaves the name out), so the event page read as an address with no place name. A picked venue is now saved as "Name, address" (`ResolvedPlace.label(for:)`), unless the address already contains the name; cities keep their formatted address. Events created before the fix keep their address-only text.
 - Not in this PR: the map itself on the event page (the Event detail restyle), and the Apple adapter (before launch). **Launch note**: if Google is still the provider at launch, its terms only allow keeping coordinates 30 days, so a refresh job using the stored place IDs would be needed. **M13 notes**: the deploy image needs a Swift 6.0+ toolchain, the `tzf-swift_tzf.resources` bundle copied next to the binary, and `tzdata` installed on Linux. **For the Create event restyle**: label the suggestion list for screen readers (listbox/option roles, keyboard selection) and show the event's zone next to the date and time field.
 
+**Events (theme PR 4 of 9)**: `/events` restyled from the canvas's Events artboard.
+
+- **Header** "Discover events". No live indicator (user's decision: the list doesn't update live, so it would mislead).
+- **Filter panel** on the left (stacks on phones):
+  - **All / Going / Hosting** tabs for members. Going lists events they've joined. Hosting lists events they host and events of a group they own or moderate. Visitors get no tabs and always see everything.
+  - **Category chips**: All plus all six categories (Film included, which the canvas left out), each with its photo. Chips keep the tab and other filters, and tabs keep the category.
+  - The city, venue and date fields wait for the **Search & filters** PR (user's decision: the whole filter panel designed once there).
+- **Cards**: the category photo with a category badge; the title (the link); a gold "Group event" tag and a "You host this" tag; the host's photo or group logo; the date and city; the description cut to about 220 characters and two lines; up to three attendee photos with "N going" (or "Be the first to join"); and **Join / Going** right on the card. Visitors get "Sign in to join".
+- **Join / Going on a card** posts to the existing join/leave routes with `?view=card` over htmx and gets just that card back, swapped in place. Going asks first ("Leave this event?" / *Stay* / *Leave event*). A refused join (e.g. the event is full) comes back as the same card with the reason, since htmx doesn't swap error responses. The event page's own buttons are unchanged. Without JavaScript the forms still work, landing on the event page.
+- **Load more** restyled and keeps the tab.
+- Server: `EventService.ListScope` (`.all`, `.going`, `.hosting`) on `filteredEventsPage`. It's web-only, not part of the shared `EventFilterQuery`, so the API can't list another member's events. Card data (description, attendee photos, attendance, hosting) is built by `EventWebController.cardViews` for the web page rather than added to the API's `EventSummaryDTO`.
+- Styles in `app-theme.css` (`.ev-*`), from the canvas tokens.
+- **Fixed from its independent review**:
+  - Card text (host, attendee count, panel titles) moved from `--ink-faint` (3.65:1) to `--ink-soft`.
+  - Accent buttons are a shade darker site-wide so white text passes AA (5.2:1, was 4.0:1), since Join is now on every card.
+  - Join/Going keep keyboard focus after the card is swapped (stable button ids).
+  - The category badge is no longer hidden from screen readers.
+  - The page went from about 85 database queries to about 6: one attendee query for the whole page, and the host taken from the already-loaded event.
+  - A cancelled event's card says "Cancelled" instead of offering Join.
+  - Someone who lost access to a private group's event and leaves it gets the card removed rather than shown again.
+  - Long titles and places wrap on phones.
+  - Chips use `aria-current="true"`.
+  - The cards partial no longer carries an HTML comment into every response.
+- **Known, not fixed**: leaving an event on the Going tab and then loading more can skip one event (page offsets shift).
+- **Human checkpoint**: passed.
+- 7 tests (`EventsPageTests.swift`), including private-event card requests, cancelled events, losing access, and Load more on a tab. The group-logo tests follow the new card markup.
+- Not in this PR: past events still show in All, as before (dates come with Search & filters).
+
 **Themed confirm dialog (theme follow-up, between PRs 3 and 4)**: asked for at the group profile checkpoint. The site's 8 confirmations (remove photo, remove logo, leave event, cancel event, unfollow, delete account, leave group, remove moderator) now open a dialog in the site's style instead of the browser's box: a card with a warning icon, the question, an optional second line, and buttons named for the action ("Delete account" / "Keep account", "Cancel event" / "Keep event"). Cancel has focus first; Escape and clicking outside cancel; focus returns to the button.
 
 - One script, `Public/js/confirm-dialog.js`, handles htmx's `htmx:confirm` for both layouts. Each layout has its own `<dialog data-confirm-dialog>` (the admin site keeps its look and loses its inline copy of the script). Elements can add `data-confirm-detail`, `data-confirm-ok` and `data-confirm-cancel`; the convention is in architecture §15. Without `<dialog>` support it falls back to the browser's confirm, with the detail line included.

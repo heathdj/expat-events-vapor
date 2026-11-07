@@ -87,7 +87,9 @@ Every section on the artboard is built (hero, value props, how-it-works, pricing
 | Billing history table | ❌ deferred to M8 |
 | "Your data" card (download / delete) | built, but not on the artboard (extrapolated) |
 
-### Events: `Events.dc.html` (❌)
+### Events: `Events.dc.html` (🟡, theme Events PR)
+
+**Update (theme Events PR)**: header, All / Going / Hosting tabs (new server filter), category chips with photos (all six), the new cards with inline Join / Going, and Load more are built; see `MILESTONES.md`. The live indicator was left out (the list doesn't update live). City, venue and date search are the Search & filters PR.
 
 | Artboard element | Today |
 |---|---|
