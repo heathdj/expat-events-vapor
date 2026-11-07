@@ -39,7 +39,8 @@ final class EventsPageTests: XCTestCase {
 
     private func makeEvent(_ app: Application, title: String, host: User, category: EventCategory = .food,
                            description: String = "A relaxed evening.", groupID: UUID? = nil,
-                           attendeeLimit: Int? = nil, daysAhead: Double = 3) async throws -> Event {
+                           attendeeLimit: Int? = nil, visibility: EventVisibility = .public,
+                           daysAhead: Double = 3) async throws -> Event {
         try await EventService(db: app.db).createEvent(CreateEventRequest(
             title: title, description: description, category: category,
             date: Date().addingTimeInterval(daysAhead * 24 * 3600),
@@ -119,7 +120,7 @@ final class EventsPageTests: XCTestCase {
                 for category in EventCategory.allCases {
                     XCTAssertTrue(html.contains("/design/categories/\(category.rawValue).jpg"), "\(category) chip has its photo.")
                 }
-                XCTAssertTrue(html.contains(#"<a href="/events?tab=hosting&amp;category=food" class="ev-chip is-active" aria-current="page">"#))
+                XCTAssertTrue(html.contains(#"<a href="/events?tab=hosting&amp;category=food" class="ev-chip is-active" aria-current="true">"#))
                 XCTAssertTrue(html.contains(#"<a href="/events?tab=hosting&amp;category=film" class="ev-chip">"#))
                 XCTAssertTrue(html.contains(#"<a href="/events?tab=hosting" class="ev-chip">"#), "All keeps the tab.")
                 XCTAssertTrue(html.contains("Tapas Exchange"))
