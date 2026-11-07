@@ -1,67 +1,130 @@
 #extend("layouts/base"):
 #export("body"):
-<div class="bg-white border border-gray-200 rounded-lg p-6">
-    <div class="flex items-center justify-between">
-        <h1 class="text-2xl font-semibold">#(event.title)</h1>
-        <span class="text-xs uppercase tracking-wide text-gray-500">#(event.category)</span>
-    </div>
-    <p class="text-sm text-gray-500 mt-1">#(event.venueAddress)</p>
-    <p class="text-sm text-gray-700 mt-1" data-event-date>#eventDate(event.date, "long", event.timeZone)</p>
-    #if(event.hostUserID):
-    <p class="text-sm text-gray-500 mt-2 flex items-center gap-2">
-        <img referrerpolicy="no-referrer" src="#avatarURL(event.hostPhotoURL)" alt="" class="h-8 w-8 rounded-full object-cover">
-        <span>Hosted by <a href="/profile/#(event.hostUserID)" class="hover:underline">#(event.hostDisplayName)</a></span>
-    </p>
-    #else:
-    <p class="text-sm text-gray-500 mt-2 flex items-center gap-2">
-        <img referrerpolicy="no-referrer" src="#groupLogoURL(event.hostPhotoURL)" alt="" class="h-8 w-8 rounded-full object-cover" data-host-logo>
-        <span>Hosted by #(event.hostDisplayName)</span>
-    </p>
-    #endif
-    <p class="mt-4 text-gray-700">#(event.description)</p>
+<!--
+  Event detail, from the canvas's EventDetail artboard (Event detail PR).
+  Left: the photo banner, the action bar (partials/event-fragment, swapped
+  on Join, Going and Cancel), what and where (with the map picture), and
+  the chat (members only; visitors get a sign-in box). Right: the host and
+  who's going (partials/event-attendees, which those same swaps update out
+  of band).
+-->
+<nav class="ed-crumb" aria-label="Breadcrumb"><a href="/events">Events</a> <span aria-hidden="true">&rsaquo;</span> <span aria-current="page">#(event.title)</span></nav>
 
-    #extend("partials/event-fragment")
-
-    <!--
-      Realtime chat (architecture §8, M5). hx-ext="ws" + ws-connect opens
-      the socket ChatWebController serves; every message that arrives over
-      it is a pre-rendered HTML fragment (see chat-message-oob.leaf) that
-      htmx appends into \#chat-messages via hx-swap-oob — no hand-written
-      JS for receiving. ws-send on the form below sends its fields as a
-      JSON object over the same socket on submit (htmx's ws extension's
-      default behavior), matching SendChatMessageRequest{text, parentID}.
-
-      Reply-threading (M5 criterion \#3) is fully implemented and tested
-      server-side — a message with parentID set renders visually nested
-      here — but there's no click-to-reply affordance in this pass's UI
-      yet; sending a reply currently requires the API directly. A small,
-      explicit scope trim (like M4's city/venue autocomplete), not an
-      oversight.
-    -->
-    <div id="chat" class="mt-8 border-t border-gray-200 pt-6" hx-ext="ws" ws-connect="/events/#(event.id)/chat/ws">
-        <h2 class="text-lg font-medium">Chat</h2>
-        <div id="chat-messages" class="mt-3 space-y-2 max-h-96 overflow-y-auto">
-            #for(message in chatHistory):
-            #if(message.parentID):
-            <div class="chat-message ml-6 border-l-2 border-gray-200 pl-3" data-message-id="#(message.id)">
-            #else:
-            <div class="chat-message" data-message-id="#(message.id)">
-            #endif
-                <span class="font-medium text-sm">#(message.displayName)</span>
-                <p class="text-sm text-gray-700">#(message.text)</p>
+<div class="ed-layout">
+    <div class="ed-main">
+        <header class="ed-hero">
+            <img src="#(hero.imageURL)" alt="">
+            <div class="ed-hero-content">
+                <div class="ed-hero-tags">
+                    <span class="ed-cat-badge">#(hero.categoryLabel)</span>
+                    #if(people.hostIsGroup):
+                    <span class="ed-group-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5 8 12l4-6.5 4 6.5 4.5-3.5-1.5 9h-14z"/></svg>Hosted by a group</span>
+                    #endif
+                </div>
+                <h1>#(event.title)</h1>
+                <div class="ed-hero-meta">
+                    <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg><span>#eventDate(event.date, "short", event.timeZone)</span></div>
+                    <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.1-7-11.2A7 7 0 0 1 19 9.8C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.6" r="2.4"/></svg><span>#(place.label)</span></div>
+                </div>
             </div>
-            #endfor
-        </div>
+        </header>
+
+        #extend("partials/event-fragment")
+
+        <section class="card ed-info" aria-label="About this event">
+            <div class="ed-info-row">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><line x1="12" y1="11" x2="12" y2="16.5"/><line x1="12" y1="7.5" x2="12" y2="7.6"/></svg>
+                <p class="ed-description">#(event.description)</p>
+            </div>
+            <div class="ed-info-row">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>
+                <span data-event-date>#eventDate(event.date, "long", event.timeZone)</span>
+            </div>
+            <div class="ed-info-row ed-place" x-data="{ open: false }">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.1-7-11.2A7 7 0 0 1 19 9.8C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.6" r="2.4"/></svg>
+                <div class="ed-place-main">
+                    <div class="ed-place-line">
+                        <span>#(place.label)</span>
+                        #if(!place.hasMap):
+                        #if(place.directionsURL):
+                        <a href="#(place.directionsURL)" class="ed-map-link" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
+                        #endif
+                        #endif
+                        #if(place.hasMap):
+                        <button type="button" class="btn btn-outline btn-sm" @click="open = !open" :aria-expanded="open.toString()" aria-expanded="false" aria-controls="ed-map" data-map-toggle>
+                            <span x-text="open ? 'Hide map' : 'Show map'">Show map</span>
+                        </button>
+                        #endif
+                    </div>
+                    #if(place.hasMap):
+                    <div id="ed-map" class="ed-map" x-show="open" x-cloak>
+                        <!-- The picture is only asked for when the map is opened: each one is billed. -->
+                        <template x-if="open">
+                            <img src="#(place.mapURL)" alt="Map of #(place.label)" width="640" height="280" data-map-image>
+                        </template>
+                        <a href="#(place.directionsURL)" class="ed-map-link" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
+                    </div>
+                    #endif
+                </div>
+            </div>
+        </section>
 
         #if(isSignedIn):
-        <form ws-send onsubmit="setTimeout(() => this.reset())" class="mt-3 flex gap-2">
-            <input type="text" name="text" placeholder="Message..." class="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm" required autocomplete="off">
-            <button type="submit" class="bg-gray-900 text-white px-4 py-2 rounded-md text-sm hover:bg-gray-700">Send</button>
-        </form>
+        <section class="card ed-chat" id="chat" aria-labelledby="ed-chat-title"
+                 data-me="#(currentUserID)" data-can-chat hx-ext="ws" ws-connect="/events/#(event.id)/chat/ws"
+                 x-data="{ connected: false }" @htmx:ws-open.camel="connected = true" @htmx:ws-close.camel="connected = false">
+            <div class="ed-chat-head">
+                <h2 class="ed-chat-title" id="ed-chat-title"><span class="ed-pulse" :class="connected ? 'is-on' : ''" aria-hidden="true"></span>Live chat</h2>
+                <span class="ed-chat-sub" role="status" x-text="connected ? 'Connected · real-time updates' : 'Connecting…'">Connecting…</span>
+            </div>
+            <div id="chat-messages" class="ed-chat-body" role="log" aria-label="Chat messages">
+                #for(row in chatRows):
+                <div class="chat-message ed-msg#if(row.isReply): is-reply#endif" data-message-id="#(row.message.id)" data-user-id="#(row.message.userID)" data-thread-id="#(row.threadID)" data-name="#(row.message.displayName)">
+                    <img referrerpolicy="no-referrer" src="#avatarURL(row.message.photoURL)" alt="" class="ed-msg-avatar">
+                    <div class="ed-msg-main">
+                        <div class="ed-msg-meta"><b>#(row.message.displayName)</b><time datetime="#(row.isoTime)" data-local-time>#(row.fallbackTime)</time></div>
+                        #if(row.replyToName):
+                        <div class="ed-msg-replying">Replying to #(row.replyToName)</div>
+                        #endif
+                        <div class="ed-msg-bubble">#(row.message.text)</div>
+                        <button type="button" class="ed-msg-reply" data-reply aria-label="Reply to #(row.message.displayName)">Reply</button>
+                    </div>
+                </div>
+                #endfor
+                #if(hasNoMessages):
+                <p class="ed-chat-empty" data-chat-empty>No messages yet. Say hello!</p>
+                #endif
+            </div>
+            <form ws-send class="ed-chat-input" data-chat-form>
+                <div class="ed-replying" hidden data-replying>
+                    <span>Replying to <b data-replying-name></b></span>
+                    <button type="button" class="ed-replying-cancel" aria-label="Cancel reply" data-cancel-reply>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+                    </button>
+                </div>
+                <p id="chat-error" class="ed-chat-error" role="alert" hidden></p>
+                <input type="hidden" name="parentID" value="" disabled data-parent-input>
+                <div class="ed-chat-compose">
+                    <label for="chat-text" class="sr-only">Message</label>
+                    <textarea id="chat-text" name="text" rows="1" maxlength="2000" required autocomplete="off" placeholder="Say something to the group…"></textarea>
+                    <button type="submit" class="ed-send" aria-label="Send">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 3 3 10.5l7 3 3 7z"/><line x1="10" y1="13.5" x2="21" y2="3"/></svg>
+                    </button>
+                </div>
+            </form>
+        </section>
         #else:
-        <p class="mt-3 text-sm text-gray-500"><a href="/login" class="underline">Sign in</a> to join the chat.</p>
+        <section class="card ed-chat" id="chat" aria-labelledby="ed-chat-title">
+            <div class="ed-chat-head">
+                <h2 class="ed-chat-title" id="ed-chat-title"><span class="ed-pulse" aria-hidden="true"></span>Live chat</h2>
+            </div>
+            <p class="ed-chat-signin" data-chat-signin><a href="/login">Sign in</a> to see the chat and join in.</p>
+        </section>
         #endif
     </div>
+
+    #extend("partials/event-attendees")
 </div>
+<script src="/js/event-chat.js"></script>
 #endexport
 #endextend

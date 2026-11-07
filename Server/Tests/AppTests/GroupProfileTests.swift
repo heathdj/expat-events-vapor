@@ -216,7 +216,7 @@ final class GroupProfileTests: XCTestCase {
                               "A member's own event still shows their avatar.")
             }
             try await app.test(.GET, "/events/\(eventID.uuidString)") { res async in
-                XCTAssertTrue(res.body.string.contains(#"src="/design/group-placeholder.png" alt="" class="h-8 w-8 rounded-full object-cover" data-host-logo"#))
+                XCTAssertTrue(res.body.string.contains(#"src="/design/group-placeholder.png" alt="" class="ed-host-img" data-host-logo"#))
             }
 
             var (headers, body) = multipart(PhotoTests.png(extra: [PhotoTests.pngChunk("tEXt", Array("Author\0Someone".utf8))]))

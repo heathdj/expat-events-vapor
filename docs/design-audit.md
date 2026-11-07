@@ -104,7 +104,9 @@ Every section on the artboard is built (hero, value props, how-it-works, pricing
 | "Load more events" | 🟡 **fixed** as a plain "Load more events" button (htmx, keeps the current filters); restyle pending |
 | htmx filter and load-more endpoints (architecture §6: `POST /events/filter`, `GET /events?page=N`) | 🟡 the load-more half is built (`GET /events?page=N` with `HX-Request` returns just the next cards); the filter endpoint isn't |
 
-### Event detail: `EventDetail.dc.html` (❌)
+### Event detail: `EventDetail.dc.html` (🟡, Event detail PR)
+
+**Update (Event detail PR)**: breadcrumb, photo banner, action bar with Join / Going, info panel with a server-fetched map picture (user's decision), restyled chat with bubbles, avatars, local times, a connection indicator and Reply, and the attendee column with Host / You tags are built; see `MILESTONES.md`.
 
 | Artboard element | Today |
 |---|---|

@@ -8,6 +8,9 @@ import ExpatEventsAPI
 /// surface can reuse it directly — no such route exists yet in this
 /// milestone, only the web path does.
 struct ChatService {
+    /// Longest chat message (Event detail PR; there was no limit).
+    static let maxMessageLength = 2000
+
     let db: Database
 
     /// Connect-time / send-time authorization (M5 acceptance criteria #4,
@@ -47,6 +50,11 @@ struct ChatService {
         // posting -- so the sender is re-checked on every message.
         guard let sender = try await User.find(userID, on: db), sender.erasedAt == nil, !sender.isSuspended else {
             throw APIError(code: "account_unavailable", message: "This account can't send messages.")
+        }
+        // Event detail PR: messages had no limits.
+        let trimmed = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, request.text.count <= Self.maxMessageLength else {
+            throw APIError(code: "invalid_message", message: "Messages must be between 1 and \(Self.maxMessageLength) characters.")
         }
         if let parentID = request.parentID {
             guard let parent = try await ChatMessage.find(parentID, on: db), parent.$event.id == eventID else {

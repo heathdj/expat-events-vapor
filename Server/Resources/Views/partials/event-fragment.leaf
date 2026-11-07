@@ -1,57 +1,52 @@
-<!--
-  The part of the event-detail page that changes on join/leave/cancel
-  (M4 acceptance criterion #6: "Join/leave updates the attendee list and
-  count via htmx swap, no full reload"). Rendered two ways with the exact
-  same context (`event`, `isSignedIn`, `canManage`):
-    - inline, via \#extend from pages/event-detail.leaf, as part of the
-      normal full-page render;
-    - standalone, by EventWebController's join/leave/cancel handlers when
-      the request came from htmx (identified by the HX-Request header) —
-      that response replaces just this fragment in the DOM, via
-      hx-target="\#event-fragment" hx-swap="outerHTML" below.
-  Keep this the single source of truth for this markup — don't duplicate
-  it back into event-detail.leaf.
--->
-<div id="event-fragment">
+<div id="event-fragment" class="card ed-actions">
     #if(event.isCancelled):
-    <p class="mt-2 text-sm font-medium text-red-600">This event has been cancelled.</p>
+    <p class="ed-cancelled" role="status">This event has been cancelled.</p>
     #endif
-
-    <div class="mt-6 flex items-center gap-3">
-        #if(isSignedIn):
+    <div class="ed-actions-row">
+        <div class="ed-host-line">
+            <span>Hosted by</span>
+            #if(people.hostIsGroup):
+            <img referrerpolicy="no-referrer" src="#groupLogoURL(event.hostPhotoURL)" alt="" class="ed-host-img" data-host-logo>
+            #else:
+            <img referrerpolicy="no-referrer" src="#avatarURL(event.hostPhotoURL)" alt="" class="ed-host-img">
+            #endif
+            #if(people.hostURL):
+            <a href="#(people.hostURL)"><b>#(event.hostDisplayName)</b></a>
+            #else:
+            <b>#(event.hostDisplayName)</b>
+            #endif
+        </div>
+        <div class="ed-action-buttons">
+            #if(!event.isCancelled):
+            #if(isSignedIn):
             #if(event.isRequesterAttending):
             <form hx-post="/events/#(event.id)/leave" hx-target="\#event-fragment" hx-swap="outerHTML"
                   hx-confirm="Leave this event?" data-confirm-ok="Leave event" data-confirm-cancel="Stay"
                   method="post" action="/events/#(event.id)/leave">
-                <button type="submit" class="border border-gray-300 px-4 py-2 rounded-md text-sm hover:bg-gray-50">Leave</button>
+                <button type="submit" id="ed-rsvp" class="btn btn-going" aria-label="Going. Leave this event">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="5 12.5 10 17.5 19 7.5"/></svg>Going
+                </button>
             </form>
             #else:
             <form hx-post="/events/#(event.id)/join" hx-target="\#event-fragment" hx-swap="outerHTML"
                   method="post" action="/events/#(event.id)/join">
-                <button type="submit" class="bg-gray-900 text-white px-4 py-2 rounded-md text-sm hover:bg-gray-700">Join</button>
+                <button type="submit" id="ed-rsvp" class="btn btn-accent">Join event</button>
             </form>
             #endif
-        #else:
-            <a href="/login" class="bg-gray-900 text-white px-4 py-2 rounded-md text-sm hover:bg-gray-700">Sign in to join</a>
-        #endif
-
-        #if(canManage):
-        <!-- hx-confirm alone, not also onsubmit's own confirm() -- both
-             together showed the dialog twice in a row (found in M4,
-             fixed when the destructive-action-confirms convention was
-             written down in M6 -- see architecture doc §15). -->
-        <form hx-post="/events/#(event.id)/cancel" hx-target="\#event-fragment" hx-swap="outerHTML"
-              hx-confirm="Cancel this event?" data-confirm-detail="It stays listed, marked as cancelled." data-confirm-ok="Cancel event" data-confirm-cancel="Keep event"
-              method="post" action="/events/#(event.id)/cancel">
-            <button type="submit" class="text-sm text-red-600 hover:underline">Cancel event</button>
-        </form>
-        #endif
+            #else:
+            <a href="/login" class="btn btn-accent">Sign in to join</a>
+            #endif
+            #if(canManage):
+            <form hx-post="/events/#(event.id)/cancel" hx-target="\#event-fragment" hx-swap="outerHTML"
+                  hx-confirm="Cancel this event?" data-confirm-detail="It stays listed, marked as cancelled." data-confirm-ok="Cancel event" data-confirm-cancel="Keep event"
+                  method="post" action="/events/#(event.id)/cancel">
+                <button type="submit" class="btn btn-danger-outline btn-sm">Cancel event</button>
+            </form>
+            #endif
+            #endif
+        </div>
     </div>
-
-    <h2 class="mt-8 text-lg font-medium">Attendees (#(count(event.attendees)))</h2>
-    <ul class="mt-2 text-sm text-gray-600">
-        #for(attendee in event.attendees):
-        <li>#(attendee.displayName)</li>
-        #endfor
-    </ul>
 </div>
+#if(isUpdate):
+#extend("partials/event-attendees")
+#endif

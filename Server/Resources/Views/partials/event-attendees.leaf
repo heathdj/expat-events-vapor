@@ -1,0 +1,44 @@
+<aside id="event-attendees" class="card ed-side" aria-label="Host and people going"#if(isUpdate): hx-swap-oob="true"#endif>
+    <h2 class="ed-side-head" id="ed-host-title">Host</h2>
+    <ul class="ed-people" aria-labelledby="ed-host-title">
+        #if(people.host):
+        <li class="ed-person">
+            #if(people.hostIsGroup):
+            <img referrerpolicy="no-referrer" src="#groupLogoURL(people.host.photoURL)" alt="">
+            #else:
+            <img referrerpolicy="no-referrer" src="#avatarURL(people.host.photoURL)" alt="">
+            #endif
+            #if(people.hostURL):
+            <a href="#(people.hostURL)">#(people.host.name)</a>
+            #else:
+            <span>#(people.host.name)</span>
+            #endif
+            #if(people.host.isYou):
+            <span class="ed-tag-you">You</span>
+            #endif
+        </li>
+        #endif
+    </ul>
+    <h2 class="ed-side-head ed-side-head-split" id="ed-going-title">#(people.goingText)</h2>
+    #if(people.hasGoing):
+    <ul class="ed-people" aria-labelledby="ed-going-title">
+        #for(person in people.rows):
+        <li class="ed-person">
+            <img referrerpolicy="no-referrer" src="#avatarURL(person.photoURL)" alt="">
+            <a href="#(person.profileURL)">#(person.name)</a>
+            #if(person.isHost):
+            <span class="ed-tag-host">Host</span>
+            #endif
+            #if(person.roleLabel):
+            <span class="ed-tag-role">#(person.roleLabel)</span>
+            #endif
+            #if(person.isYou):
+            <span class="ed-tag-you">You</span>
+            #endif
+        </li>
+        #endfor
+    </ul>
+    #else:
+    <p class="ed-side-empty" data-no-one-going>No one's going yet. Be the first!</p>
+    #endif
+</aside>
