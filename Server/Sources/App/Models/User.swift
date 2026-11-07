@@ -77,6 +77,17 @@ final class User: Model, Content, @unchecked Sendable {
     @OptionalField(key: "gravatar_checked_at")
     var gravatarCheckedAt: Date?
 
+    /// Search & filters PR: kilometres or miles on `/events`. Stored as
+    /// plain text and read through `distanceUnit`; nil (or anything
+    /// unexpected) means kilometres.
+    @OptionalField(key: "distance_unit")
+    var distanceUnitValue: String?
+
+    var distanceUnit: DistanceUnit {
+        get { distanceUnitValue.flatMap(DistanceUnit.init(rawValue:)) ?? .km }
+        set { distanceUnitValue = newValue == .km ? nil : newValue.rawValue }
+    }
+
     @Children(for: \.$user)
     var oauthIdentities: [OAuthIdentity]
 

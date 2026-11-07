@@ -1,7 +1,8 @@
 import Vapor
 import ExpatEventsGeo
 
-/// The create-event form's city and venue autocomplete, over htmx.
+/// The create-event form's city and venue autocomplete, over htmx, and the
+/// `/events` "Near" filter's city search (`field=near`).
 ///
 /// Every provider call happens here on the server, never in the browser:
 /// the provider's key stays server-side, and switching provider (Google in
@@ -54,8 +55,10 @@ struct PlacesWebController: RouteCollection {
 
     @Sendable
     func suggest(req: Request) async throws -> View {
-        let kind = Self.kind(req)
-        let rawQuery = (try? req.query.get(String.self, at: kind == .city ? "cityAddress" : "venueAddress")) ?? ""
+        let isNear = Self.isNearField(req)
+        let kind: PlaceKind = isNear ? .city : Self.kind(req)
+        let queryKey = isNear ? "near" : (kind == .city ? "cityAddress" : "venueAddress")
+        let rawQuery = (try? req.query.get(String.self, at: queryKey)) ?? ""
         let query = String(rawQuery.prefix(Self.maxQueryLength))
         let session = Self.session(req)
         let near = kind == .venue
@@ -85,13 +88,13 @@ struct PlacesWebController: RouteCollection {
                 hasSubtitle: !suggestion.subtitle.isEmpty,
                 selectURL: Self.url("/places/select", [
                     ("kind", kind.rawValue), ("id", suggestion.placeID), ("name", suggestion.title), ("session", session),
-                ])
+                ] + (isNear ? [("field", "near")] : []))
             )
         }
         return try await req.view.render("partials/place-suggestions", SuggestionsContext(
             suggestions: Array(rows),
             hasSuggestions: !rows.isEmpty,
-            fieldTarget: "#\(kind.rawValue)-field",
+            fieldTarget: isNear ? "#near-field" : "#\(kind.rawValue)-field",
             showNoResults: rows.isEmpty && errorMessage == nil && query.trimmingCharacters(in: .whitespaces).count >= LocationService.minimumQueryLength,
             errorMessage: errorMessage,
             showGoogleAttribution: !rows.isEmpty && req.application.location.provider.name == "google"
@@ -100,7 +103,8 @@ struct PlacesWebController: RouteCollection {
 
     @Sendable
     func select(req: Request) async throws -> View {
-        let kind = Self.kind(req)
+        let isNear = Self.isNearField(req)
+        let kind: PlaceKind = isNear ? .city : Self.kind(req)
         guard let id = try? req.query.get(String.self, at: "id"), !id.isEmpty else {
             throw Abort(.badRequest, reason: "Missing place ID.")
         }
@@ -119,12 +123,21 @@ struct PlacesWebController: RouteCollection {
             field = PlaceFieldContext(address: name, latitude: "", longitude: "", placeID: "", session: UUID().uuidString)
             errorMessage = "That place couldn't be looked up. Try picking it again, or another suggestion."
         }
+        if isNear {
+            return try await req.view.render("partials/near-field", field.nearContext(error: errorMessage))
+        }
         switch kind {
         case .city:
             return try await req.view.render("partials/city-field", field.cityContext(error: errorMessage))
         case .venue:
             return try await req.view.render("partials/venue-field", field.venueContext(error: errorMessage))
         }
+    }
+
+    /// `field=near`: the `/events` "Near" filter (Search & filters PR), a
+    /// city search whose field is `partials/near-field`.
+    private static func isNearField(_ req: Request) -> Bool {
+        (try? req.query.get(String.self, at: "field")) == "near"
     }
 
     private static func kind(_ req: Request) -> PlaceKind {
@@ -194,6 +207,23 @@ struct PlaceFieldContext {
         let venueSession: String
         let venueSelected: Bool
         let venueError: String?
+    }
+
+    /// The `/events` "Near" field's keys (`partials/near-field`).
+    /// `nearJustPicked` makes the field tell the filter form to refresh.
+    struct NearLeaf: Encodable {
+        let near: String
+        let nearLat: String
+        let nearLng: String
+        let nearSession: String
+        let nearSelected: Bool
+        let nearJustPicked: Bool
+        let nearError: String?
+    }
+
+    func nearContext(error: String?) -> NearLeaf {
+        NearLeaf(near: address, nearLat: latitude, nearLng: longitude, nearSession: session,
+                 nearSelected: isSelected, nearJustPicked: isSelected, nearError: error)
     }
 
     func cityContext(error: String?) -> CityLeaf {
