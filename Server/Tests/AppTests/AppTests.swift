@@ -405,12 +405,16 @@ final class AppTests: XCTestCase {
             let view = try await req.view.render("partials/event-fragment", EventWebController.EventFragmentContext(
                 event: dto,
                 isSignedIn: true,
-                canManage: false
+                canManage: false,
+                people: EventWebController.people(for: event, dto: dto, requesterID: try attendee.requireID())
             ))
             let html = String(buffer: view.data)
 
             XCTAssertTrue(html.contains(#"id="event-fragment""#), "Fragment root element missing.")
-            XCTAssertTrue(html.contains("Attendees (1)"), "Attendee count not rendered correctly.")
+            // Event detail PR: the attendee list sits in its own column and
+            // comes along out of band.
+            XCTAssertTrue(html.contains(#"id="event-attendees" class="card ed-side" aria-label="Host and people going" hx-swap-oob="true""#))
+            XCTAssertTrue(html.contains("1 person going"), "Attendee count not rendered correctly.")
             XCTAssertTrue(html.contains("/events/\(try event.requireID())/leave"), "Attending user should see a Leave form, not Join.")
             XCTAssertFalse(html.contains("Cancel event"), "canManage: false should hide the cancel button.")
 
@@ -821,18 +825,22 @@ final class AppTests: XCTestCase {
             let chatHistory = try chatMessages.map { try $0.toDTO() }
 
             let req = Request(application: app, on: app.eventLoopGroup.any())
+            let rows = EventWebController.chatRows(chatHistory)
             let view = try await req.view.render("pages/event-detail", EventWebController.EventDetailPageContext(
                 title: dto.title,
                 event: dto,
                 isSignedIn: true,
                 canManage: true,
-                chatHistory: chatHistory
+                chatHistory: chatHistory,
+                chatRows: rows,
+                hasNoMessages: rows.isEmpty
             ))
             let html = String(buffer: view.data)
             XCTAssertTrue(html.contains(#"id="chat-messages""#), "Chat container missing from the page.")
             XCTAssertTrue(html.contains("root message"), "Root message text missing.")
             XCTAssertTrue(html.contains("a reply"), "Reply text missing.")
-            XCTAssertTrue(html.contains("ml-6 border-l-2"), "Reply should render with the nested-reply indent class.")
+            XCTAssertTrue(html.contains("chat-message ed-msg is-reply"), "Reply should render with the nested-reply class.")
+            XCTAssertTrue(html.contains("Replying to \(chatHistory[0].displayName)"), "A reply names the message it answers.")
             XCTAssertTrue(html.contains(#"ws-connect="/events/\#(try event.requireID())/chat/ws""#), "Chat socket connect URL missing or wrong.")
 
             // And the empty-history case (no messages yet) must render
@@ -845,23 +853,22 @@ final class AppTests: XCTestCase {
                 chatHistory: []
             ))
             let emptyHTML = String(buffer: emptyView.data)
-            XCTAssertTrue(emptyHTML.contains(#"id="chat-messages""#), "Chat container missing from the empty-history page.")
-            XCTAssertTrue(emptyHTML.contains("Sign in</a> to join the chat"), "Signed-out visitor should see the sign-in prompt instead of a compose form.")
+            // Event detail PR (user's decision): the chat is for members, so
+            // a signed-out visitor gets a sign-in box instead of the messages.
+            XCTAssertFalse(emptyHTML.contains(#"id="chat-messages""#), "Visitors don't see the chat.")
+            XCTAssertTrue(emptyHTML.contains("Sign in</a> to see the chat and join in."), "Signed-out visitor should see the sign-in prompt instead.")
         }
     }
 
-    /// Independent review (pre-PR) found the test above only ever
-    /// rendered the page, never the standalone live-broadcast partial
-    /// ChatWebController actually sends over the socket — despite a doc
-    /// comment claiming both were covered. This closes that gap directly,
-    /// and also pins down the DOM-shape bug the same review caught: an
-    /// earlier version of chat-message-oob.leaf put hx-swap-oob on an
-    /// outer wrapper div rather than the .chat-message element itself,
-    /// which (per htmx's own oobSwap behavior — it clones whichever
-    /// element actually carries hx-swap-oob) would have inserted an extra
-    /// wrapper as a direct child of #chat-messages instead of the message
-    /// element landing there directly, unlike page-load-rendered messages.
-    func testChatMessageOOBPartialRendersWithSwapAttributeOnMessageElement() async throws {
+    /// Renders the standalone live-broadcast partial ChatWebController
+    /// sends over the socket. For hx-swap-oob="beforeend:..." htmx inserts
+    /// the CONTENTS of the element carrying the attribute (only outerHTML
+    /// keeps the element), so the attribute sits on a wrapper and the
+    /// .chat-message inside it is what lands in #chat-messages, the same
+    /// shape as page-load messages. (The M5 version of this test asserted
+    /// the opposite; the Event detail PR's review found live messages were
+    /// arriving without their .chat-message element.)
+    func testChatMessageOOBPartialWrapsTheMessageElement() async throws {
         try await withApp { app in
             let host = try await makeUser(db: app.db, email: "chat-oob-host@example.com")
             let dto = ChatMessageDTO(
@@ -880,14 +887,11 @@ final class AppTests: XCTestCase {
             let html = String(buffer: view.data)
 
             XCTAssertTrue(html.contains("a live message"), "Message text missing from the OOB partial.")
-            // The bug an independent review caught: hx-swap-oob must be on
-            // the SAME element as data-message-id, not a separate wrapper
-            // div — htmx clones whichever element actually carries
-            // hx-swap-oob, so a wrapper would land one DOM level too deep.
             XCTAssertTrue(
-                html.contains(#"data-message-id="\#(dto.id)" hx-swap-oob="beforeend:#chat-messages""#),
-                "hx-swap-oob must be on the same element as data-message-id, not a wrapper div."
+                html.contains(#"<div hx-swap-oob="beforeend:#chat-messages"><div class="chat-message ed-msg" data-message-id="\#(dto.id)""#),
+                "hx-swap-oob sits on a wrapper whose only child is the .chat-message element."
             )
+            XCTAssertTrue(html.contains("</div></div>"), "The wrapper closes right after the message.")
         }
     }
 
