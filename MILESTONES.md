@@ -217,6 +217,39 @@ Not started — and can't meaningfully proceed without the DigitalOcean/Stripe/A
 - **Found at the checkpoint**: a picked venue showed only its street address (Google's formatted address for a business leaves the name out), so the event page read as an address with no place name. A picked venue is now saved as "Name, address" (`ResolvedPlace.label(for:)`), unless the address already contains the name; cities keep their formatted address. Events created before the fix keep their address-only text.
 - Not in this PR: the map itself on the event page (the Event detail restyle), and the Apple adapter (before launch). **Launch note**: if Google is still the provider at launch, its terms only allow keeping coordinates 30 days, so a refresh job using the stored place IDs would be needed. **M13 notes**: the deploy image needs a Swift 6.0+ toolchain, the `tzf-swift_tzf.resources` bundle copied next to the binary, and `tzdata` installed on Linux. **For the Create event restyle**: label the suggestion list for screen readers (listbox/option roles, keyboard selection) and show the event's zone next to the date and time field.
 
+**Event detail (theme PR 6 of 9)**: `/events/:id` restyled from the canvas's EventDetail artboard.
+
+- **Banner:** a breadcrumb, then the category photo (darkened) with the category, a gold "Hosted by a group" tag, the title, date and place.
+- **Action bar:** the host's photo or group logo, linked to their profile or the group. Join event / Going (Going asks first) and Cancel event for managers. A cancelled event says so and offers neither.
+- **What and where:** the description (line breaks kept), the full date in the event's time zone, and the place. **Show map** opens a map picture and an "Open in Google Maps" link.
+- **Map** (user's decision: a picture fetched by the server, so the key never reaches the browser and the page loads no map scripts):
+  - `GET /events/:id/map.png` asks the provider (`StaticMapProvider` in ExpatEventsGeo; Google's Static Maps API in development, a grey placeholder in tests and without a key).
+  - It only serves people who can see the event, and the coordinates come from the event, never the request. It uses the venue's coordinates, or the city's.
+  - Never stored (Google's terms); browsers may keep it an hour.
+  - Rate-limited to 30 a minute per member or visitor address.
+  - The picture is only requested when Show map is opened, since each one is billed.
+  - The key needs "Maps Static API" enabled (`.env.example`). The privacy page explains it.
+- **Chat:**
+  - Message bubbles with photos, names and times shown in the reader's own time zone. Your own messages are on the right.
+  - Replies are indented and say who they answer. **Reply** on any message replies in its thread (one level deep, as before), with a "Replying to" chip you can cancel.
+  - Enter sends, Shift+Enter starts a new line.
+  - Connected / Connecting indicator from htmx's WebSocket events.
+  - **Members only** (user's decision at the checkpoint): signed-out visitors get a "Sign in to see the chat and join in" box. The messages aren't loaded for them, and no socket is opened.
+  - The per-reader parts are in `Public/js/event-chat.js`, since live messages are the same HTML for everyone.
+  - Messages are now limited to 1–2,000 characters (they had no limit).
+- **Side card:** a **Host** section (the member or group, linked), then **Going** with the count and everyone going, or "No one's going yet. Be the first!" (user's decision at the checkpoint: "0 people going" with the host under it read wrongly; the host isn't counted as going). You're tagged You, and a host who is also going is tagged Host. Join and Going update it out of band (`partials/event-attendees`), since it sits in another column.
+- **Owner / Moderator pills** (user's request at the checkpoint): on a group's event, its owner and moderators who are going get a pill next to their name.
+- **Fixed from its independent review:**
+  - **Blocker:** live chat messages arrived without their `.chat-message` element. For `hx-swap-oob="beforeend:…"`, htmx inserts the contents of the element carrying the attribute, so the attribute now sits on a wrapper. The M5 comment and test had this backwards; the old two-line markup looked fine flattened. The test now checks the wrapper's only child is the message.
+  - A refused message (blank, too long, account unavailable) used to vanish. The sender now gets the reason in the chat box (`#chat-error`, sent over the socket to them only), and their text is put back.
+  - **Map pictures are members only, with a site-wide cap.** Keying visitors by address breaks behind a proxy and is easy to dodge, so visitors get the free "Open in Google Maps" link. The limits are 30 a minute per member and 600 a minute site-wide. Cancelled events get no map. The limiter prunes old keys once a window.
+  - The chat script no longer errors for signed-out visitors.
+  - The side card scrolls as a whole when its list is longer than the screen.
+  - Reply buttons are named "Reply to [name]", and the connection status is announced.
+  - A test that always passed now checks the replied-to name.
+- Styles in `app-theme.css` (`.ed-*`).
+- 6 tests (`EventDetailTests.swift`). The older fragment, chat and group-logo tests follow the new markup.
+
 **Search & filters (theme PR 5 of 9)**: the `/events` filter panel, requested by the user after the Events PR. Decisions (user's): upcoming by default; date presets plus From/To; distances in km by default with a per-member setting for miles; the list updates instantly.
 
 - **One filter form** in the left panel (behind a "Filters" button with a count on phones):
