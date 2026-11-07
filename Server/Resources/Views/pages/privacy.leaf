@@ -26,6 +26,7 @@
     <h2>Who processes it</h2>
     <p>Placeholder.</p>
     <p>Profile photos: if you sign in with Google, your Google profile photo is shown by default; it's loaded from Google's servers by the browser of anyone viewing a page with your photo, so Google receives their request. Gravatar is only used if you choose it on your <a href="/account">account page</a>: we then ask gravatar.com whether your email address has one, and viewers' browsers load it from gravatar.com, which receives an encoded (hashed) form of your email address. Photos you upload are stored by us, with location and camera details removed. You can choose a different photo or show none at any time.</p>
+    <p>Maps: when you open an event's map, our server asks Google Maps for a picture of the event's location and passes it to you. Your browser doesn't contact Google for it, and we don't keep the pictures. "Open in Google Maps" takes you to Google's own site.</p>
 
     <h2>How long we keep it</h2>
     <p>Placeholder.</p>
