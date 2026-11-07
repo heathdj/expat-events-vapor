@@ -1,17 +1,59 @@
 #extend("layouts/base"):
 #export("body"):
-<div class="flex items-center justify-between mb-6">
-    <h1 class="text-2xl font-semibold">Upcoming events</h1>
-    #if(isSignedIn):
-    <a href="/events/new" class="bg-gray-900 text-white text-sm px-4 py-2 rounded-md hover:bg-gray-700">Host an event</a>
-    #endif
+<!--
+  Theme Events PR: the canvas's Events artboard. Left panel: All / Going /
+  Hosting (members only) and the category chips; the city, venue and date
+  filters join it in the Search and filters PR. No live indicator: the
+  list doesn't update live (user's decision).
+-->
+<div class="ev-page-head">
+    <h1>Discover events</h1>
 </div>
 
-<div class="grid gap-4">
-    #extend("partials/event-cards")
-    #if(count(events) == 0):
-    <p class="text-gray-500 text-sm">No events match these filters yet.</p>
-    #endif
+<div class="ev-layout">
+    <aside class="card ev-panel" aria-label="Filters">
+        #if(showTabs):
+        <h2 class="ev-panel-title" id="ev-tabs-title">Show</h2>
+        <nav class="ev-tabs" aria-labelledby="ev-tabs-title">
+            #for(tab in tabs):
+            #if(tab.isActive):
+            <a href="#(tab.href)" class="ev-tab is-active" aria-current="page">#(tab.label)</a>
+            #else:
+            <a href="#(tab.href)" class="ev-tab">#(tab.label)</a>
+            #endif
+            #endfor
+        </nav>
+        #endif
+        <h2 class="ev-panel-title" id="ev-category-title">Category</h2>
+        <nav class="ev-chips" aria-labelledby="ev-category-title">
+            #for(chip in categories):
+            #if(chip.isActive):
+            <a href="#(chip.href)" class="ev-chip is-active" aria-current="true">
+            #else:
+            <a href="#(chip.href)" class="ev-chip">
+            #endif
+                #if(chip.imageURL):
+                <img src="#(chip.imageURL)" alt="" loading="lazy">
+                #else:
+                <span class="ev-chip-all" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg></span>
+                #endif
+                <span>#(chip.label)</span>
+            </a>
+            #endfor
+        </nav>
+    </aside>
+
+    <section class="ev-list" aria-label="Events">
+        #extend("partials/event-cards")
+        #if(hasNoEvents):
+        <div class="card ev-empty" data-events-empty>
+            <p>#(empty.message)</p>
+            #if(empty.actionHref):
+            <a href="#(empty.actionHref)" class="btn btn-outline btn-sm">#(empty.actionLabel)</a>
+            #endif
+        </div>
+        #endif
+    </section>
 </div>
 #endexport
 #endextend
