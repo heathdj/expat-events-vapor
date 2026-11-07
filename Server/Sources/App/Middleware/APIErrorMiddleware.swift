@@ -41,3 +41,14 @@ extension APIError {
         }
     }
 }
+
+/// Web pages (everything outside `/api/v1`) go through Vapor's own
+/// ErrorMiddleware, which turned any `APIError` into a 500 (the gap noted
+/// in M4). As an `AbortError` it gets the same status as the API: 404 for
+/// an event you can't see, 403 for forbidden, 400 for bad input. Fixed in
+/// the Search & filters PR, where the Events PR's card test caught it.
+extension APIError: @retroactive AbortError {
+    public var status: HTTPResponseStatus { httpStatus }
+    public var reason: String { message }
+}
+

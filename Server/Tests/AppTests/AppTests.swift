@@ -631,26 +631,19 @@ final class AppTests: XCTestCase {
             }
 
             // A signed-in outsider (real session, just not a group member)
-            // still gets rejected — assertVisible throws APIError.notFound
-            // either way. NOTE: on this web (non-/api/v1) path, that comes
-            // back as a 500, not a 404 — APIError doesn't conform to
-            // AbortError, so Vapor's default ErrorMiddleware falls through
-            // to its generic-500 case. This is the same pre-existing,
-            // already-tracked gap noted in MILESTONES.md's M4 section
-            // (APIErrorMiddleware only wraps /api/v1); asserting the real
-            // status here (rather than the "should be" 404) so this test
-            // stays honest, and so a future fix for that gap has to come
-            // back and update this assertion rather than silently pass.
-            // What actually matters and IS correctly enforced either way:
-            // the response never contains the event's title/venue/details.
+            // still gets rejected — assertVisible throws APIError.notFound,
+            // a 404 on the web too since APIError became an AbortError
+            // (Search & filters PR; it used to be a 500, the gap noted in
+            // MILESTONES.md's M4 section). Either way the response never
+            // contains the event's title, venue or details.
             try await app.test(.GET, path, headers: ["Cookie": try await cookie(for: outsider)]) { res async in
-                XCTAssertEqual(res.status, .internalServerError, "A signed-in non-member must not see a private group event either (see note above on the status code itself).")
+                XCTAssertEqual(res.status, .notFound, "A signed-in non-member must not see a private group event either.")
                 XCTAssertFalse(res.body.string.contains("Private Group Detail Event"), "A rejected outsider must never see the event's details, whatever the status code.")
             }
 
             // And a fully anonymous visitor, same rejection, same caveat.
             try await app.test(.GET, path) { res async in
-                XCTAssertEqual(res.status, .internalServerError, "An anonymous visitor must not see a private group event either (see note above).")
+                XCTAssertEqual(res.status, .notFound, "An anonymous visitor must not see a private group event either.")
                 XCTAssertFalse(res.body.string.contains("Private Group Detail Event"), "An anonymous visitor must never see the event's details, whatever the status code.")
             }
         }
