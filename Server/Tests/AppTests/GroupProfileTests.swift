@@ -210,9 +210,9 @@ final class GroupProfileTests: XCTestCase {
             ), hostUserID: try member.requireID())
 
             try await app.test(.GET, "/events") { res async in
-                XCTAssertTrue(res.body.string.contains(#"src="/design/group-placeholder.png" alt="" class="h-6 w-6 rounded-full object-cover" data-host-logo"#),
+                XCTAssertTrue(res.body.string.contains(#"src="/design/group-placeholder.png" alt="" class="ev-host-img" data-host-logo"#),
                               "No logo yet: the default group icon.")
-                XCTAssertTrue(res.body.string.contains(#"src="/design/avatar-placeholder.png" alt="" class="h-6 w-6 rounded-full object-cover">"#),
+                XCTAssertTrue(res.body.string.contains(#"src="/design/avatar-placeholder.png" alt="" class="ev-host-img">"#),
                               "A member's own event still shows their avatar.")
             }
             try await app.test(.GET, "/events/\(eventID.uuidString)") { res async in
@@ -242,7 +242,7 @@ final class GroupProfileTests: XCTestCase {
             XCTAssertTrue(summary.isGroupHosted)
             XCTAssertEqual(summary.hostPhotoURL, logo)
             try await app.test(.GET, "/events") { res async in
-                XCTAssertTrue(res.body.string.contains(#"src="\#(logo)" alt="" class="h-6 w-6 rounded-full object-cover" data-host-logo"#))
+                XCTAssertTrue(res.body.string.contains(#"src="\#(logo)" alt="" class="ev-host-img" data-host-logo"#))
             }
             try await app.test(.GET, "/events/\(eventID.uuidString)") { res async in
                 XCTAssertTrue(res.body.string.contains(#"src="\#(logo)""#), "On the event page too.")

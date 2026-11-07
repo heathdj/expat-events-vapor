@@ -1,34 +1,70 @@
-<!--
-  Event cards plus the "Load more events" button. Rendered two ways with
-  the same flat context (events, nextPageURL): inline via \#extend from
-  pages/events.leaf, and standalone by EventWebController.dashboard for an
-  htmx "Load more" request. The button's wrapper is what gets replaced
-  (hx-target="\#load-more", hx-swap="outerHTML"), so the next page's cards
-  land where the button was, followed by a fresh button if there's yet
-  another page. Without JavaScript the same element is a plain link to
-  that page.
--->
-#for(event in events):
-<a href="/events/#(event.id)" data-event-card class="block bg-white border border-gray-200 rounded-lg p-4 hover:border-gray-400">
-    <div class="flex items-center justify-between">
-        <h2 class="font-medium">#(event.title)</h2>
-        <span class="text-xs uppercase tracking-wide text-gray-500">#(event.category)</span>
+#for(card in cards):
+<article class="card ev-card" data-event-card>
+    <div class="ev-thumb">
+        <a href="#(card.url)" tabindex="-1" aria-hidden="true"><img src="#(card.imageURL)" alt="" loading="lazy"></a>
+        <span class="ev-cat-badge">#(card.categoryLabel)</span>
     </div>
-    <p class="text-sm text-gray-700 mt-1">#eventDate(event.date, "short", event.timeZone)</p>
-    <p class="text-sm text-gray-500 mt-1 flex items-center gap-2">
-        #if(event.isGroupHosted):
-        <img referrerpolicy="no-referrer" src="#groupLogoURL(event.hostPhotoURL)" alt="" class="h-6 w-6 rounded-full object-cover" data-host-logo>
-        #else:
-        <img referrerpolicy="no-referrer" src="#avatarURL(event.hostPhotoURL)" alt="" class="h-6 w-6 rounded-full object-cover">
+    <div class="ev-body">
+        <h2 class="ev-title"><a href="#(card.url)">#(card.event.title)</a></h2>
+        <div class="ev-host">
+            #if(card.event.isGroupHosted):
+            <span class="ev-group-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5 8 12l4-6.5 4 6.5 4.5-3.5-1.5 9h-14z"/></svg>Group event</span>
+            #endif
+            #if(card.isHost):
+            <span class="ev-host-tag">You host this</span>
+            #endif
+            <span class="ev-host-name">Hosted by
+            #if(card.event.isGroupHosted):
+            <img referrerpolicy="no-referrer" src="#groupLogoURL(card.event.hostPhotoURL)" alt="" class="ev-host-img" data-host-logo>
+            #else:
+            <img referrerpolicy="no-referrer" src="#avatarURL(card.event.hostPhotoURL)" alt="" class="ev-host-img">
+            #endif
+            #(card.event.hostDisplayName)</span>
+        </div>
+        <div class="ev-meta">
+            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg><span>#eventDate(card.event.date, "short", card.event.timeZone)</span></div>
+            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.1-7-11.2A7 7 0 0 1 19 9.8C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.6" r="2.4"/></svg><span>#(card.event.cityAddress)</span></div>
+        </div>
+        <p class="ev-desc">#(card.descriptionPreview)</p>
+        #if(card.errorMessage):
+        <p class="ev-error" role="alert" data-card-error>#(card.errorMessage)</p>
         #endif
-        <span>#(event.cityAddress) — hosted by #(event.hostDisplayName)</span>
-    </p>
-    <p class="text-sm text-gray-400 mt-1">#(event.attendeeCount) attending</p>
-</a>
+        <div class="ev-bottom">
+            <div class="ev-attendees">
+                #for(photo in card.attendeePhotos):
+                <img referrerpolicy="no-referrer" src="#avatarURL(photo)" alt="">
+                #endfor
+                <span>#(card.attendeeText)</span>
+            </div>
+            #if(card.event.isCancelled):
+            <span class="ev-cancelled">Cancelled</span>
+            #else:
+            #if(card.isSignedIn):
+            #if(card.isAttending):
+            <form method="post" action="/events/#(card.event.id)/leave"
+                  hx-post="/events/#(card.event.id)/leave?view=card" hx-target="closest article" hx-swap="outerHTML"
+                  hx-confirm="Leave this event?" data-confirm-ok="Leave event" data-confirm-cancel="Stay">
+                <button type="submit" id="rsvp-#(card.event.id)" class="btn btn-sm btn-going" aria-label="Going to #(card.event.title). Leave this event">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="5 12.5 10 17.5 19 7.5"/></svg>Going
+                </button>
+            </form>
+            #else:
+            <form method="post" action="/events/#(card.event.id)/join"
+                  hx-post="/events/#(card.event.id)/join?view=card" hx-target="closest article" hx-swap="outerHTML">
+                <button type="submit" id="rsvp-#(card.event.id)" class="btn btn-sm btn-accent" aria-label="Join #(card.event.title)">Join</button>
+            </form>
+            #endif
+            #else:
+            <a href="/login" class="btn btn-sm btn-accent">Sign in to join</a>
+            #endif
+            #endif
+        </div>
+    </div>
+</article>
 #endfor
 #if(nextPageURL):
-<div id="load-more" class="text-center pt-2">
+<div id="load-more" class="ev-load-more">
     <a href="#(nextPageURL)" hx-get="#(nextPageURL)" hx-target="\#load-more" hx-swap="outerHTML"
-       class="inline-block border border-gray-300 rounded-md px-4 py-2 text-sm hover:bg-gray-50">Load more events</a>
+       class="btn btn-outline">Load more events</a>
 </div>
 #endif

@@ -20,9 +20,16 @@ import ExpatEventsGeo
 struct EventWebController: RouteCollection {
     struct EventsPageContext: Encodable {
         let title = "Events"
-        let events: [EventSummaryDTO]
+        let cards: [EventCardView]
         let filter: EventFilterQuery
         let isSignedIn: Bool
+        /// All / Going / Hosting. Only shown to members (a visitor has
+        /// nothing to be going to or hosting).
+        let tabs: [TabLink]
+        let showTabs: Bool
+        let categories: [CategoryChip]
+        let empty: EmptyState
+        let hasNoEvents: Bool
         /// The next page's URL, with the current filters kept, when there
         /// is one -- what the "Load more events" button fetches. nil on
         /// the last page.
@@ -30,10 +37,72 @@ struct EventWebController: RouteCollection {
     }
 
     /// One page of event cards plus the next "Load more" button: what an
-    /// htmx "Load more" request gets back (`partials/event-cards.leaf`).
+    /// htmx "Load more" request gets back (`partials/event-cards.leaf`),
+    /// and, with a single card and no button, what a Join/Going click on
+    /// a card gets back.
     struct EventCardsContext: Encodable {
-        let events: [EventSummaryDTO]
+        let cards: [EventCardView]
         let nextPageURL: String?
+    }
+
+    /// Everything one card on `/events` shows (theme Events PR). Built
+    /// here rather than added to `EventSummaryDTO`, which the JSON API
+    /// shares.
+    struct EventCardView: Encodable {
+        let event: EventSummaryDTO
+        let url: String
+        let imageURL: String
+        let categoryLabel: String
+        let descriptionPreview: String
+        /// Up to three attendees' photo URLs (nil shows the default avatar).
+        let attendeePhotos: [String?]
+        let attendeeText: String
+        let isSignedIn: Bool
+        let isAttending: Bool
+        let isHost: Bool
+        /// Why a Join from this card didn't work (e.g. the event is full).
+        let errorMessage: String?
+    }
+
+    struct TabLink: Encodable {
+        let label: String
+        let href: String
+        let isActive: Bool
+    }
+
+    struct CategoryChip: Encodable {
+        let label: String
+        let href: String
+        /// nil for "All".
+        let imageURL: String?
+        let isActive: Bool
+    }
+
+    struct EmptyState: Encodable {
+        let message: String
+        let actionLabel: String?
+        let actionHref: String?
+    }
+
+    /// The tab a list shows (`?tab=`). Anything unknown is All.
+    enum ListTab: String, CaseIterable {
+        case all, going, hosting
+
+        var label: String {
+            switch self {
+            case .all: "All"
+            case .going: "Going"
+            case .hosting: "Hosting"
+            }
+        }
+    }
+
+    struct TabQuery: Content {
+        let tab: String?
+    }
+
+    struct CardViewQuery: Content {
+        let view: String?
     }
 
     struct EventDetailPageContext: Encodable {
@@ -135,33 +204,48 @@ struct EventWebController: RouteCollection {
     /// `/events`. A normal request renders the whole page with the first
     /// (or requested) page of events; an htmx request -- the "Load more
     /// events" button -- gets just the next page's cards and the next
-    /// button (architecture §6's `GET /events?page=N`).
+    /// button (architecture §6's `GET /events?page=N`). `?tab=going` /
+    /// `?tab=hosting` narrow it to the member's own events (visitors
+    /// always get All).
     @Sendable
     func dashboard(req: Request) async throws -> Response {
         let filter = try req.query.decode(EventFilterQuery.self)
         let requesterID = req.auth.get(User.self).flatMap { try? $0.requireID() }
-        let service = EventService(db: req.db)
-        let page = try await service.filteredEventsPage(filter, requesterID: requesterID)
-        var summaries: [EventSummaryDTO] = []
-        for event in page.events {
-            summaries.append(try await service.summaryDTO(for: event, requesterID: requesterID))
+        let tab: ListTab = requesterID == nil
+            ? .all
+            : ((try? req.query.decode(TabQuery.self))?.tab.flatMap(ListTab.init(rawValue:)) ?? .all)
+        let scope: EventService.ListScope
+        switch (tab, requesterID) {
+        case (.going, let id?): scope = .going(id)
+        case (.hosting, let id?): scope = .hosting(id)
+        default: scope = .all
         }
+        let service = EventService(db: req.db)
+        let page = try await service.filteredEventsPage(filter, requesterID: requesterID, scope: scope)
+        let cards = try await Self.cardViews(for: page.events, requesterID: requesterID, on: req.db)
         let currentPage = EventService.clampedPage(filter)
         let nextPageURL = page.hasMore && currentPage < EventService.maxPage
-            ? Self.pageURL(for: filter, page: currentPage + 1)
+            ? Self.pageURL(for: filter, page: currentPage + 1, tab: tab)
             : nil
 
         let response: Response
         if req.headers.first(name: "HX-Request") != nil {
             response = try await req.view.render("partials/event-cards", EventCardsContext(
-                events: summaries,
+                cards: cards,
                 nextPageURL: nextPageURL
             )).encodeResponse(for: req)
         } else {
             response = try await req.view.render("pages/events", EventsPageContext(
-                events: summaries,
+                cards: cards,
                 filter: filter,
                 isSignedIn: requesterID != nil,
+                tabs: ListTab.allCases.map { option in
+                    TabLink(label: option.label, href: Self.listURL(for: filter, tab: option), isActive: option == tab)
+                },
+                showTabs: requesterID != nil,
+                categories: Self.categoryChips(for: filter, tab: tab),
+                empty: Self.emptyState(for: tab, filter: filter),
+                hasNoEvents: cards.isEmpty,
                 nextPageURL: nextPageURL
             )).encodeResponse(for: req)
         }
@@ -171,10 +255,109 @@ struct EventWebController: RouteCollection {
         return response
     }
 
+    /// "All" plus one chip per category (all six, with the category's
+    /// photo), each keeping the other filters and the tab.
+    static func categoryChips(for filter: EventFilterQuery, tab: ListTab) -> [CategoryChip] {
+        let all = CategoryChip(label: "All", href: listURL(for: filter.with(category: nil), tab: tab),
+                               imageURL: nil, isActive: filter.category == nil)
+        return [all] + EventCategory.allCases.map { category in
+            CategoryChip(label: category.rawValue.capitalized,
+                         href: listURL(for: filter.with(category: category), tab: tab),
+                         imageURL: imageURL(for: category),
+                         isActive: filter.category == category)
+        }
+    }
+
+    static func imageURL(for category: EventCategory) -> String {
+        "/design/categories/\(category.rawValue).jpg"
+    }
+
+    static func emptyState(for tab: ListTab, filter: EventFilterQuery) -> EmptyState {
+        switch tab {
+        case .going:
+            EmptyState(message: "You haven't joined any events here yet.", actionLabel: "Browse all events",
+                       actionHref: listURL(for: filter, tab: .all))
+        case .hosting:
+            EmptyState(message: "You're not hosting any events here yet.", actionLabel: "Create an event", actionHref: "/events/new")
+        case .all:
+            EmptyState(message: "No events match these filters yet.", actionLabel: nil, actionHref: nil)
+        }
+    }
+
+    /// The card view for each event, in order: the summary, a short
+    /// description, up to three attendee photos, and the requester's
+    /// attendance and hosting.
+    static func cardViews(for events: [Event], requesterID: UUID?, on db: Database) async throws -> [EventCardView] {
+        let service = EventService(db: db)
+        let ids = try events.map { try $0.requireID() }
+        // One query for every card's attendees (events are capped at a
+        // few hundred), from which each card takes its count, first three
+        // photos and the requester's attendance (review: this replaced
+        // three queries per card).
+        var attendeesByEvent: [UUID: [EventAttendee]] = [:]
+        if !ids.isEmpty {
+            let rows = try await EventAttendee.query(on: db)
+                .filter(\.$event.$id ~~ ids)
+                .with(\.$user)
+                .sort(\.$joinedAt, .ascending)
+                .all()
+            attendeesByEvent = Dictionary(grouping: rows, by: { $0.$event.id })
+        }
+        var managedGroupIDs: Set<UUID> = []
+        if let requesterID, !ids.isEmpty {
+            managedGroupIDs = Set(try await GroupMembership.query(on: db)
+                .filter(\.$user.$id == requesterID)
+                .filter(\.$role ~~ [.owner, .moderator])
+                .all()
+                .map { $0.$group.id })
+        }
+        var cards: [EventCardView] = []
+        for event in events {
+            let id = try event.requireID()
+            let attendees = attendeesByEvent[id] ?? []
+            let summary = try await service.summaryDTO(for: event, requesterID: requesterID, attendeeCount: attendees.count)
+            let isHost = requesterID.map { requester in
+                event.$hostUser.id == requester || event.$hostGroup.id.map { managedGroupIDs.contains($0) } == true
+            } ?? false
+            cards.append(EventCardView(
+                event: summary,
+                url: "/events/\(id.uuidString)",
+                imageURL: imageURL(for: event.category),
+                categoryLabel: event.category.rawValue.capitalized,
+                descriptionPreview: descriptionPreview(event.eventDescription),
+                attendeePhotos: attendees.prefix(3).map { $0.user.photoURL },
+                attendeeText: attendees.isEmpty ? "Be the first to join" : "\(attendees.count) going",
+                isSignedIn: requesterID != nil,
+                isAttending: requesterID.map { requester in attendees.contains { $0.$user.id == requester } } ?? false,
+                isHost: isHost,
+                errorMessage: nil
+            ))
+        }
+        return cards
+    }
+
+    /// The description, cut at a word near 220 characters (the card also
+    /// clamps it to two lines).
+    static func descriptionPreview(_ text: String) -> String {
+        let flat = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+        let limit = 220
+        guard flat.count > limit else { return flat }
+        let cut = flat.prefix(limit)
+        let atWord = cut.lastIndex(of: " ").map { cut[..<$0] } ?? cut
+        return atWord.trimmingCharacters(in: .whitespaces) + "…"
+    }
+
     /// `/events?…&page=N` with every filter currently applied kept, so
     /// "Load more" continues the same filtered list.
-    static func pageURL(for filter: EventFilterQuery, page: Int) -> String {
+    static func pageURL(for filter: EventFilterQuery, page: Int, tab: ListTab = .all) -> String {
+        listURL(for: filter, tab: tab, page: page)
+    }
+
+    /// `/events` with this filter and tab (and page, if given).
+    static func listURL(for filter: EventFilterQuery, tab: ListTab, page: Int? = nil) -> String {
         var items: [URLQueryItem] = []
+        if tab != .all { items.append(.init(name: "tab", value: tab.rawValue)) }
         if let category = filter.category { items.append(.init(name: "category", value: category.rawValue)) }
         if let city = filter.city { items.append(.init(name: "city", value: city)) }
         if let venue = filter.venue { items.append(.init(name: "venue", value: venue)) }
@@ -184,7 +367,8 @@ struct EventWebController: RouteCollection {
         if let onOrAfterDate = filter.onOrAfterDate {
             items.append(.init(name: "onOrAfterDate", value: String(onOrAfterDate.timeIntervalSince1970)))
         }
-        items.append(.init(name: "page", value: String(page)))
+        if let page { items.append(.init(name: "page", value: String(page))) }
+        guard !items.isEmpty else { return "/events" }
         // Encoded by hand rather than with URLComponents.queryItems, which
         // leaves "+" as-is -- and Vapor's query parser reads "+" as a
         // space, so a city like "A+B" would turn into "A B" from page 2 on.
@@ -400,6 +584,16 @@ struct EventWebController: RouteCollection {
     func join(req: Request) async throws -> Response {
         let user = try req.auth.require(User.self)
         let event = try await eventOrNotFound(req)
+        if isCardRequest(req) {
+            do {
+                let updated = try await EventService(db: req.db).join(event, userID: try user.requireID())
+                return try await respondWithCard(req: req, event: updated, errorMessage: nil)
+            } catch let error as APIError where error.code != APIError.notFound.code {
+                // e.g. the event is full: the card says so instead of
+                // silently not changing (htmx doesn't swap error responses).
+                return try await respondWithCard(req: req, event: event, errorMessage: error.message)
+            }
+        }
         let updated = try await EventService(db: req.db).join(event, userID: try user.requireID())
         return try await respondWithEventUpdate(req: req, event: updated)
     }
@@ -409,7 +603,35 @@ struct EventWebController: RouteCollection {
         let user = try req.auth.require(User.self)
         let event = try await eventOrNotFound(req)
         let updated = try await EventService(db: req.db).leave(event, userID: try user.requireID())
+        if isCardRequest(req) {
+            return try await respondWithCard(req: req, event: updated, errorMessage: nil)
+        }
         return try await respondWithEventUpdate(req: req, event: updated)
+    }
+
+    /// A Join/Going click on an `/events` card (`?view=card`, over htmx)
+    /// gets that one card back to swap in place.
+    private func isCardRequest(_ req: Request) -> Bool {
+        req.headers.first(name: "HX-Request") != nil
+            && (try? req.query.decode(CardViewQuery.self))?.view == "card"
+    }
+
+    private func respondWithCard(req: Request, event: Event, errorMessage: String?) async throws -> Response {
+        let requesterID = try req.auth.require(User.self).requireID()
+        let service = EventService(db: req.db)
+        guard let reloaded = try await service.find(try event.requireID()) else { throw Abort(.notFound) }
+        // Someone who left an event they can no longer see (removed from
+        // its private group) gets an empty answer, which removes the card
+        // rather than showing them the event again (review).
+        guard (try? await service.assertVisible(reloaded, to: requesterID)) != nil else {
+            return Response(status: .ok)
+        }
+        var cards = try await Self.cardViews(for: [reloaded], requesterID: requesterID, on: req.db)
+        if let errorMessage, let card = cards.first {
+            cards = [card.withError(errorMessage)]
+        }
+        return try await req.view.render("partials/event-cards", EventCardsContext(cards: cards, nextPageURL: nil))
+            .encodeResponse(for: req)
     }
 
     /// M4 acceptance criterion #6. `req.auth.require` above already
@@ -439,5 +661,21 @@ struct EventWebController: RouteCollection {
             throw Abort(.notFound)
         }
         return event
+    }
+}
+
+extension EventWebController.EventCardView {
+    func withError(_ message: String) -> Self {
+        Self(event: event, url: url, imageURL: imageURL, categoryLabel: categoryLabel,
+             descriptionPreview: descriptionPreview, attendeePhotos: attendeePhotos, attendeeText: attendeeText,
+             isSignedIn: isSignedIn, isAttending: isAttending, isHost: isHost, errorMessage: message)
+    }
+}
+
+extension EventFilterQuery {
+    /// The same filter with another category (nil for all), from page 1.
+    func with(category: EventCategory?) -> EventFilterQuery {
+        EventFilterQuery(category: category, city: city, venue: venue, hostUserID: hostUserID,
+                         hostGroupID: hostGroupID, onOrAfterDate: onOrAfterDate, page: nil)
     }
 }
