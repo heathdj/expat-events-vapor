@@ -132,23 +132,26 @@ struct EventsSearch: Equatable {
     /// to three hours ago (a gig that began ten minutes ago is still on).
     static let startedGrace: TimeInterval = 3 * 3600
 
-    /// The date range for `when`, in the viewer's time zone. Upcoming,
-    /// Next 7 days and This month start from now (less the grace); Today
-    /// and the weekend cover whole days; picked dates can reach into the
-    /// past.
+    /// The date range for `when`, in the viewer's time zone: `start`
+    /// inclusive, `end` exclusive (the next day's or month's first
+    /// instant, so an event at 23:59:59.5 is still "today"; PR #21 QA).
+    /// Upcoming, Next 7 days and This month start from now (less the
+    /// grace); Today and the weekend cover whole days; picked dates can
+    /// reach into the past.
     func dateRange(now: Date) -> (start: Date?, end: Date?) {
         let fromNow = now.addingTimeInterval(-Self.startedGrace)
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         let startOfToday = calendar.startOfDay(for: now)
-        func endOfDay(_ day: Date) -> Date {
-            calendar.date(byAdding: DateComponents(day: 1, second: -1), to: calendar.startOfDay(for: day))!
+        /// The first instant of the day after `day`.
+        func nextDay(_ day: Date) -> Date {
+            calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: day))!
         }
         switch when {
         case .upcoming:
             return (fromNow, nil)
         case .today:
-            return (startOfToday, endOfDay(now))
+            return (startOfToday, nextDay(now))
         case .weekend:
             // Saturday and Sunday: this one if it's already the weekend.
             let weekday = calendar.component(.weekday, from: now) // 1 = Sunday ... 7 = Saturday
@@ -159,22 +162,20 @@ struct EventsSearch: Equatable {
             default: saturday = calendar.date(byAdding: .day, value: 7 - weekday, to: startOfToday)!
             }
             let sunday = calendar.date(byAdding: .day, value: 1, to: saturday)!
-            return (max(saturday, startOfToday), endOfDay(sunday))
+            return (max(saturday, startOfToday), nextDay(sunday))
         case .week:
             return (fromNow, calendar.date(byAdding: .day, value: 7, to: now))
         case .month:
             let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
-            let nextMonth = calendar.date(byAdding: .month, value: 1, to: monthStart)!
-            return (fromNow, nextMonth.addingTimeInterval(-1))
+            return (fromNow, calendar.date(byAdding: .month, value: 1, to: monthStart)!)
         case .custom:
-            var start = from.flatMap { Self.day($0, calendar: calendar) }
-            var end = to.flatMap { Self.day($0, calendar: calendar) }.map(endOfDay)
-            if let s = start, let e = end, s > e {
-                start = calendar.startOfDay(for: e)
-                end = endOfDay(s)
+            var first = from.flatMap { Self.day($0, calendar: calendar) }
+            var last = to.flatMap { Self.day($0, calendar: calendar) }
+            if let f = first, let l = last, f > l {
+                (first, last) = (l, f)
             }
             // No start date: from now, like Upcoming.
-            return (start ?? fromNow, end)
+            return (first ?? fromNow, last.map(nextDay))
         }
     }
 
@@ -187,7 +188,7 @@ struct EventsSearch: Equatable {
             hostUserID: hostUserID,
             hostGroupID: groupID,
             onOrAfterDate: onOrAfterDate ?? range.start,
-            onOrBeforeDate: range.end,
+            beforeDate: range.end,
             search: text,
             nearLatitude: nearLatitude,
             nearLongitude: nearLongitude,

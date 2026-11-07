@@ -282,8 +282,11 @@ public struct EventFilterQuery: Codable, Sendable, Equatable {
     public let hostUserID: UUID?
     public let hostGroupID: UUID?
     public let onOrAfterDate: Date?
-    /// Search & filters PR: the end of a date range.
+    /// Search & filters PR: the end of a date range, inclusive.
     public let onOrBeforeDate: Date?
+    /// The end of a date range, exclusive: the first instant after it (a
+    /// day or month boundary), so nothing just before midnight is missed.
+    public let beforeDate: Date?
     /// Words to find in the title or description (case-insensitive).
     public let search: String?
     /// Events within `radiusKm` of this point (the venue's coordinates,
@@ -301,6 +304,7 @@ public struct EventFilterQuery: Codable, Sendable, Equatable {
         hostGroupID: UUID? = nil,
         onOrAfterDate: Date? = nil,
         onOrBeforeDate: Date? = nil,
+        beforeDate: Date? = nil,
         search: String? = nil,
         nearLatitude: Double? = nil,
         nearLongitude: Double? = nil,
@@ -314,6 +318,7 @@ public struct EventFilterQuery: Codable, Sendable, Equatable {
         self.hostGroupID = hostGroupID
         self.onOrAfterDate = onOrAfterDate
         self.onOrBeforeDate = onOrBeforeDate
+        self.beforeDate = beforeDate
         self.search = search
         self.nearLatitude = nearLatitude
         self.nearLongitude = nearLongitude

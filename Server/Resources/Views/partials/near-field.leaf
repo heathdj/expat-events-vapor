@@ -5,7 +5,7 @@
                class="ev-input" type="text"
                hx-get="/places/suggest" hx-trigger="input changed delay:300ms" hx-target="\#near-suggestions"
                hx-vals='{"kind": "city", "field": "near", "session": "#(nearSession)"}'
-               oninput="this.closest('[data-near-field]').querySelectorAll('input[type=hidden]').forEach(function (i) { i.value = '' })">
+               oninput="var f = this.closest('[data-near-field]'), had = false; f.querySelectorAll('input[type=hidden]').forEach(function (i) { if (i.value) had = true; i.value = '' }); if (had) f.dispatchEvent(new CustomEvent('near-picked', { bubbles: true }))">
         #if(nearSelected):
         <button type="button" class="ev-near-clear" aria-label="Clear the city"
                 onclick="var f = this.closest('[data-near-field]'); f.querySelectorAll('input').forEach(function (i) { i.value = '' }); f.dispatchEvent(new CustomEvent('near-picked', { bubbles: true }))">

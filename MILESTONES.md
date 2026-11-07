@@ -255,8 +255,11 @@ Not started — and can't meaningfully proceed without the DigitalOcean/Stripe/A
   - The panel's Clear link and filter count only update on a full page load.
   - Distance and text search scan the remaining rows (fine at MVP scale; a bounding box or `pg_trgm` later).
 - **Closes the M4 gap where web pages turned an `APIError` into a 500**, since `APIErrorMiddleware` only wraps `/api/v1`. `APIError` is now an `AbortError` with the API's own status, so the web gets the same codes: 404 for a private event you can't see, 403 for forbidden, 400 for bad input. This was found because the Events PR's card test expected a 404 and had been failing since PR #20; the two M4 tests that pinned the 500 now expect 404.
+- **Fixed from QA on PR #21:**
+  - (P2) Editing or clearing a picked city now refreshes the results, since it drops the city's coordinates; before, the list stayed filtered by the old city.
+  - (P2) Date ranges end at the next day's or month's first instant, exclusive (`EventFilterQuery.beforeDate`), instead of an inclusive 23:59:59. Before, events in the last second were missed.
 - **Human checkpoint:** passed.
-- 9 tests (`SearchFiltersTests.swift`). The Events PR tests follow the radio-button tabs and chips.
+- 10 tests (`SearchFiltersTests.swift`). The Events PR tests follow the radio-button tabs and chips.
 
 **Events (theme PR 4 of 9)**: `/events` restyled from the canvas's Events artboard.
 

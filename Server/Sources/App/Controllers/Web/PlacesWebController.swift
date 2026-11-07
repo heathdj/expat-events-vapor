@@ -210,7 +210,10 @@ struct PlaceFieldContext {
     }
 
     /// The `/events` "Near" field's keys (`partials/near-field`).
-    /// `nearJustPicked` makes the field tell the filter form to refresh.
+    /// `nearJustPicked` makes the field tell the filter form to refresh
+    /// (`near-picked`). The field also sends it when a picked city is
+    /// cleared with the x or edited (which drops its coordinates), so the
+    /// results always match the form (PR #21 QA).
     struct NearLeaf: Encodable {
         let near: String
         let nearLat: String

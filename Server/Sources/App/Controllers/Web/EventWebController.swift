@@ -361,7 +361,7 @@ struct EventWebController: RouteCollection {
                 .map(\.group)
         }
         let yourIDs = Set(yours.compactMap(\.id))
-        var others = try await GroupService(db: db).publicGroups().filter { group in
+        let others = try await GroupService(db: db).publicGroups().filter { group in
             group.id.map { !yourIDs.contains($0) } ?? false
         }
         // Only the member's own groups and public groups are offered: a

@@ -133,6 +133,9 @@ struct EventService {
         if let onOrBeforeDate = Self.saneDate(filter.onOrBeforeDate) {
             query = query.filter(\.$date <= onOrBeforeDate)
         }
+        if let beforeDate = Self.saneDate(filter.beforeDate) {
+            query = query.filter(\.$date < beforeDate)
+        }
         // Every word must appear in the title or description, any case
         // (so "night jazz" finds "Jazz Night"); % and _ match literally.
         for pattern in Self.searchPatterns(filter.search) {

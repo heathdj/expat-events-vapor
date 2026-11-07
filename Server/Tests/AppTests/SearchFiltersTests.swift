@@ -126,14 +126,14 @@ final class SearchFiltersTests: XCTestCase {
 
         let today = range(.today, now: wednesday)
         XCTAssertEqual(today.0, date("2030-07-09T23:00:00Z"))
-        XCTAssertEqual(today.1, date("2030-07-10T22:59:59Z"))
+        XCTAssertEqual(today.1, date("2030-07-10T23:00:00Z"), "Ends at the next midnight, exclusive.")
 
         let weekend = range(.weekend, now: wednesday)
         XCTAssertEqual(weekend.0, date("2030-07-12T23:00:00Z"), "Saturday, Lisbon time.")
-        XCTAssertEqual(weekend.1, date("2030-07-14T22:59:59Z"), "End of Sunday.")
+        XCTAssertEqual(weekend.1, date("2030-07-14T23:00:00Z"), "Up to Monday's midnight.")
         let onSunday = range(.weekend, now: "2030-07-14T10:00:00Z")
         XCTAssertEqual(onSunday.0, date("2030-07-13T23:00:00Z"), "On Sunday it's the rest of today.")
-        XCTAssertEqual(onSunday.1, date("2030-07-14T22:59:59Z"))
+        XCTAssertEqual(onSunday.1, date("2030-07-14T23:00:00Z"))
         let onSaturday = range(.weekend, now: "2030-07-13T10:00:00Z")
         XCTAssertEqual(onSaturday.0, date("2030-07-12T23:00:00Z"))
 
@@ -142,11 +142,11 @@ final class SearchFiltersTests: XCTestCase {
         XCTAssertEqual(week.1, date("2030-07-17T15:00:00Z"))
 
         let month = range(.month, now: wednesday)
-        XCTAssertEqual(month.1, date("2030-07-31T22:59:59Z"))
+        XCTAssertEqual(month.1, date("2030-07-31T23:00:00Z"), "Up to 1 August, Lisbon time.")
 
         let swapped = range(.custom, now: wednesday, from: "2030-07-20", to: "2030-07-18")
         XCTAssertEqual(swapped.0, date("2030-07-17T23:00:00Z"), "From after To: swapped.")
-        XCTAssertEqual(swapped.1, date("2030-07-20T22:59:59Z"))
+        XCTAssertEqual(swapped.1, date("2030-07-20T23:00:00Z"))
         let onlyTo = range(.custom, now: wednesday, to: "2030-07-18")
         XCTAssertEqual(onlyTo.0, date("2030-07-10T12:00:00Z"), "No From: from now (with the grace).")
     }
@@ -325,6 +325,29 @@ final class SearchFiltersTests: XCTestCase {
         }
     }
 
+    /// A day's range ends at the next midnight, exclusive, so an event at
+    /// 23:59:59.5 is still today; one at midnight is tomorrow (PR #21 QA).
+    func testTodayIncludesTheLastSecond() async throws {
+        try await withApp { app in
+            var utc = Calendar(identifier: .gregorian)
+            utc.timeZone = TimeZone(identifier: "UTC")!
+            let midnight = utc.date(byAdding: .day, value: 1, to: utc.startOfDay(for: Date()))!
+            let host = try await makeUser(db: app.db, email: "late@example.com", plan: .free)
+            for (title, date) in [("Late Owl Party", midnight.addingTimeInterval(-0.5)), ("Tomorrow Breakfast", midnight)] {
+                let event = Event(title: title, description: "d", category: .culture, date: date,
+                                  cityAddress: "City", cityLat: 38.72, cityLng: -9.14,
+                                  venueAddress: "Venue", venueLat: 38.72, venueLng: -9.14,
+                                  hostUserID: try host.requireID())
+                try await event.save(on: app.db)
+            }
+            try await app.test(.GET, "/events?when=today&tz=UTC") { res async in
+                let html = res.body.string
+                XCTAssertTrue(html.contains("Late Owl Party"))
+                XCTAssertFalse(html.contains("Tomorrow Breakfast"))
+            }
+        }
+    }
+
     /// Dates the database can't store are ignored instead of crashing the
     /// server (review blocker), on the page and in the API.
     func testOutOfRangeDatesAreIgnored() async throws {
@@ -398,7 +421,8 @@ final class SearchFiltersTests: XCTestCase {
                 let html = res.body.string
                 XCTAssertTrue(html.contains(#"id="near-field""#))
                 XCTAssertTrue(html.contains(#"name="nearLat" value="38.7223""#))
-                XCTAssertTrue(html.contains("near-picked"), "Tells the filter form to refresh.")
+                XCTAssertTrue(html.contains(#"x-init="$dispatch('near-picked')""#), "Tells the filter form to refresh.")
+                XCTAssertTrue(html.contains("if (had) f.dispatchEvent(new CustomEvent('near-picked'"), "Editing a picked city refreshes too.")
             }
         }
     }
