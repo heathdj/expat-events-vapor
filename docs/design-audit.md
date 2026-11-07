@@ -91,6 +91,8 @@ Every section on the artboard is built (hero, value props, how-it-works, pricing
 
 **Update (theme Events PR)**: header, All / Going / Hosting tabs (new server filter), category chips with photos (all six), the new cards with inline Join / Going, and Load more are built; see `MILESTONES.md`. The live indicator was left out (the list doesn't update live). City, venue and date search are the Search & filters PR.
 
+**Update (Search & filters PR)**: the filter panel is built: text search, tabs, date presets and picked dates, category chips, near a city with a distance (km or miles per member), and group, all updating instantly over htmx; upcoming by default. The canvas's mini calendar was replaced by presets plus From/To fields (user's decision). See `MILESTONES.md`.
+
 | Artboard element | Today |
 |---|---|
 | "Discover events" header with a live "updated just now" indicator | ❌ just "Upcoming events" |
