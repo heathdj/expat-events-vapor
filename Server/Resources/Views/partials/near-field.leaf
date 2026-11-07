@@ -1,0 +1,22 @@
+<div id="near-field" class="ev-near" data-near-field #if(nearJustPicked): x-data x-init="$dispatch('near-picked')"#endif>
+    <label class="ev-panel-title" for="ev-near">Near</label>
+    <div class="ev-near-input">
+        <input id="ev-near" name="near" value="#(near)" autocomplete="off" placeholder="Start typing a city"
+               class="ev-input" type="text"
+               hx-get="/places/suggest" hx-trigger="input changed delay:300ms" hx-target="\#near-suggestions"
+               hx-vals='{"kind": "city", "field": "near", "session": "#(nearSession)"}'
+               oninput="this.closest('[data-near-field]').querySelectorAll('input[type=hidden]').forEach(function (i) { i.value = '' })">
+        #if(nearSelected):
+        <button type="button" class="ev-near-clear" aria-label="Clear the city"
+                onclick="var f = this.closest('[data-near-field]'); f.querySelectorAll('input').forEach(function (i) { i.value = '' }); f.dispatchEvent(new CustomEvent('near-picked', { bubbles: true }))">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+        #endif
+    </div>
+    <input type="hidden" name="nearLat" value="#(nearLat)">
+    <input type="hidden" name="nearLng" value="#(nearLng)">
+    #if(nearError):
+    <p class="ev-hint ev-hint-error" role="alert">#(nearError)</p>
+    #endif
+    <div id="near-suggestions"></div>
+</div>

@@ -1,0 +1,12 @@
+#if(isUpdate):
+<p id="ev-results-status" class="ev-results-status" role="status" hx-swap-oob="innerHTML">#(resultsStatus)</p>
+#endif
+#extend("partials/event-cards")
+#if(hasNoEvents):
+<div class="card ev-empty" data-events-empty>
+    <p>#(empty.message)</p>
+    #if(empty.actionHref):
+    <a href="#(empty.actionHref)" class="btn btn-outline btn-sm">#(empty.actionLabel)</a>
+    #endif
+</div>
+#endif

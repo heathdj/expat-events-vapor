@@ -1,59 +1,144 @@
 #extend("layouts/base"):
 #export("body"):
 <!--
-  Theme Events PR: the canvas's Events artboard. Left panel: All / Going /
-  Hosting (members only) and the category chips; the city, venue and date
-  filters join it in the Search and filters PR. No live indicator: the
-  list doesn't update live (user's decision).
+  Events page. The filter panel is one form: every change reloads just
+  the results over htmx (text search after a short pause), and the server
+  sends the tidy address back (HX-Push-Url) so a search can be shared.
+  hx-disinherit keeps the form's htmx settings off the city search inside
+  it. hx-history="false" makes Back ask the server for the page, so the
+  form shows the filters that were used (a saved snapshot loses checked
+  radios and typed text). The near and search boxes don't send on blur:
+  picking a city and typing already do. Without JavaScript it's a plain
+  GET form with an Apply button.
 -->
 <div class="ev-page-head">
     <h1>Discover events</h1>
 </div>
 
 <div class="ev-layout">
-    <aside class="card ev-panel" aria-label="Filters">
-        #if(showTabs):
-        <h2 class="ev-panel-title" id="ev-tabs-title">Show</h2>
-        <nav class="ev-tabs" aria-labelledby="ev-tabs-title">
-            #for(tab in tabs):
-            #if(tab.isActive):
-            <a href="#(tab.href)" class="ev-tab is-active" aria-current="page">#(tab.label)</a>
-            #else:
-            <a href="#(tab.href)" class="ev-tab">#(tab.label)</a>
+    <form id="ev-filters" class="card ev-panel" action="/events" method="get" role="search" aria-label="Filter events"
+          hx-get="/events" hx-target="\#ev-results" hx-swap="innerHTML" hx-sync="this:replace" hx-disinherit="*"
+          hx-trigger="submit, change[target.id!='ev-near'&&target.id!='ev-q'], input delay:400ms from:\#ev-q, near-picked"
+          hx-history="false"
+          x-data="{ open: false, when: '#(whenValue)' }">
+        <button type="button" class="ev-filters-toggle" @click="open = !open" :aria-expanded="open.toString()" aria-expanded="false" aria-controls="ev-filters-body">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+            Filters
+            #if(hasActiveFilters):
+            <span class="ev-filters-count">#(activeFilterCount)</span>
             #endif
+        </button>
+        <div id="ev-filters-body" class="ev-panel-body" :class="open ? 'is-open' : ''">
+            <input type="hidden" name="tz" value="#(tz)" x-init="$el.value = Intl.DateTimeFormat().resolvedOptions().timeZone">
+            #for(field in hiddenFields):
+            <input type="hidden" name="#(field.name)" value="#(field.value)">
             #endfor
-        </nav>
-        #endif
-        <h2 class="ev-panel-title" id="ev-category-title">Category</h2>
-        <nav class="ev-chips" aria-labelledby="ev-category-title">
-            #for(chip in categories):
-            #if(chip.isActive):
-            <a href="#(chip.href)" class="ev-chip is-active" aria-current="true">
-            #else:
-            <a href="#(chip.href)" class="ev-chip">
-            #endif
-                #if(chip.imageURL):
-                <img src="#(chip.imageURL)" alt="" loading="lazy">
-                #else:
-                <span class="ev-chip-all" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg></span>
-                #endif
-                <span>#(chip.label)</span>
-            </a>
-            #endfor
-        </nav>
-    </aside>
 
-    <section class="ev-list" aria-label="Events">
-        #extend("partials/event-cards")
-        #if(hasNoEvents):
-        <div class="card ev-empty" data-events-empty>
-            <p>#(empty.message)</p>
-            #if(empty.actionHref):
-            <a href="#(empty.actionHref)" class="btn btn-outline btn-sm">#(empty.actionLabel)</a>
+            <div class="ev-section">
+                <label class="ev-panel-title" for="ev-q">Search</label>
+                <input type="search" id="ev-q" name="q" value="#(q)" maxlength="100" placeholder="Title or description" class="ev-input">
+            </div>
+
+            #if(showTabs):
+            <fieldset class="ev-section">
+                <legend class="ev-panel-title">Show</legend>
+                <div class="ev-tabs">
+                    #for(tab in tabs):
+                    <label class="ev-tab"><input type="radio" name="tab" value="#(tab.value)"#if(tab.isChecked): checked#endif><span>#(tab.label)</span></label>
+                    #endfor
+                </div>
+            </fieldset>
+            #endif
+
+            <fieldset class="ev-section">
+                <legend class="ev-panel-title">When</legend>
+                <div class="ev-pills">
+                    #for(preset in datePresets):
+                    <label class="ev-pill"><input type="radio" name="when" value="#(preset.value)" x-model="when"#if(preset.isChecked): checked#endif><span>#(preset.label)</span></label>
+                    #endfor
+                </div>
+                <div class="ev-dates" x-show="when === 'custom'">
+                    <div>
+                        <label class="ev-label" for="ev-from">From</label>
+                        <input type="date" id="ev-from" name="from" value="#(from)" class="ev-input">
+                    </div>
+                    <div>
+                        <label class="ev-label" for="ev-to">To</label>
+                        <input type="date" id="ev-to" name="to" value="#(to)" class="ev-input">
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="ev-section">
+                <legend class="ev-panel-title">Category</legend>
+                <div class="ev-chips">
+                    #for(chip in categories):
+                    <label class="ev-chip">
+                        <input type="radio" name="category" value="#(chip.value)"#if(chip.isChecked): checked#endif>
+                        #if(chip.imageURL):
+                        <img src="#(chip.imageURL)" alt="" loading="lazy">
+                        #else:
+                        <span class="ev-chip-all" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg></span>
+                        #endif
+                        <span class="ev-chip-label">#(chip.label)</span>
+                    </label>
+                    #endfor
+                </div>
+            </fieldset>
+
+            <div class="ev-section">
+                #if(canSearchNear):
+                #extend("partials/near-field")
+                <div class="ev-radius">
+                    <label class="ev-label" for="ev-radius">Within</label>
+                    <select id="ev-radius" name="radius" class="ev-input">
+                        #for(option in radiusOptions):
+                        <option value="#(option.value)"#if(option.isChecked): selected#endif>#(option.label)</option>
+                        #endfor
+                    </select>
+                    <input type="hidden" name="unit" value="#(unit)">
+                </div>
+                #else:
+                <span class="ev-panel-title">Near</span>
+                <p class="ev-hint"><a href="/login">Sign in to search near a city</a></p>
+                #endif
+            </div>
+
+            <div class="ev-section">
+                <label class="ev-panel-title" for="ev-group">Group</label>
+                <select id="ev-group" name="group" class="ev-input">
+                    <option value=""#if(isAnyGroup): selected#endif>Any group</option>
+                    #if(hasYourGroups):
+                    <optgroup label="Your groups">
+                        #for(option in yourGroups):
+                        <option value="#(option.value)"#if(option.isChecked): selected#endif>#(option.label)</option>
+                        #endfor
+                    </optgroup>
+                    #endif
+                    #if(hasOtherGroups):
+                    <optgroup label="Other groups">
+                        #for(option in otherGroups):
+                        <option value="#(option.value)"#if(option.isChecked): selected#endif>#(option.label)</option>
+                        #endfor
+                    </optgroup>
+                    #endif
+                </select>
+            </div>
+
+            <noscript><button type="submit" class="btn btn-accent btn-sm">Apply filters</button></noscript>
+            #if(hasActiveFilters):
+            <a href="#(clearURL)" class="ev-clear">Clear filters</a>
             #endif
         </div>
-        #endif
+    </form>
+
+    <section class="ev-list" aria-label="Events">
+        <p id="ev-results-status" class="ev-results-status" role="status">#(resultsStatus)</p>
+        <div id="ev-results" class="ev-results">
+            #extend("partials/events-results")
+        </div>
     </section>
 </div>
+<noscript><style>.ev-panel-body{display:block !important;} .ev-filters-toggle{display:none !important;}</style></noscript>
 #endexport
 #endextend
