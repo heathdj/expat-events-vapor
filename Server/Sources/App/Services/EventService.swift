@@ -48,6 +48,17 @@ struct EventService {
 
     // MARK: - Filtering
 
+    /// Which events a list shows, on top of its filters: everyone's, the
+    /// ones a member is going to, or the ones they host (theme Events
+    /// PR's All / Going / Hosting tabs). Web only: the shared
+    /// `EventFilterQuery` doesn't take a user, so nobody can list another
+    /// member's events this way.
+    enum ListScope: Equatable {
+        case all
+        case going(UUID)
+        case hosting(UUID)
+    }
+
     static let pageSize = 20
     /// Highest page number honored. Clamping keeps `(page - 1) * pageSize`
     /// from overflowing: `?page=9223372036854775807` used to crash the
@@ -68,11 +79,34 @@ struct EventService {
     /// what `/events`' "Load more" needs. Fetches one row past the page
     /// to find out, before the visibility filter below, so a page can
     /// hold fewer than `pageSize` visible events and still report more.
-    func filteredEventsPage(_ filter: EventFilterQuery, requesterID: UUID?) async throws -> (events: [Event], hasMore: Bool) {
+    func filteredEventsPage(_ filter: EventFilterQuery, requesterID: UUID?,
+                            scope: ListScope = .all) async throws -> (events: [Event], hasMore: Bool) {
         var query = Event.query(on: db)
             .filter(\.$isCancelled == false)
             .with(\.$hostUser)
             .with(\.$hostGroup)
+
+        switch scope {
+        case .all:
+            break
+        case .going(let userID):
+            query = query.join(EventAttendee.self, on: \Event.$id == \EventAttendee.$event.$id)
+                .filter(EventAttendee.self, \.$user.$id == userID)
+        case .hosting(let userID):
+            // Events they host themselves, and events hosted by a group
+            // they own or moderate (the people who can manage them).
+            let managedGroupIDs = try await GroupMembership.query(on: db)
+                .filter(\.$user.$id == userID)
+                .filter(\.$role ~~ [.owner, .moderator])
+                .all()
+                .map { $0.$group.id }
+            query = query.group(.or) { or in
+                or.filter(\.$hostUser.$id == userID)
+                if !managedGroupIDs.isEmpty {
+                    or.filter(\.$hostGroup.$id ~~ managedGroupIDs)
+                }
+            }
+        }
 
         if let category = filter.category {
             query = query.filter(\.$category == category)
@@ -344,9 +378,16 @@ struct EventService {
 
     // MARK: - DTO conversion
 
-    func summaryDTO(for event: Event, requesterID: UUID?) async throws -> EventSummaryDTO {
+    /// `attendeeCount` saves the count query when the caller already
+    /// knows it (the `/events` cards count every page's attendees at once).
+    func summaryDTO(for event: Event, requesterID: UUID?, attendeeCount: Int? = nil) async throws -> EventSummaryDTO {
         let (hostName, hostPhoto) = try await hostDisplay(for: event)
-        let count = try await EventAttendee.query(on: db).filter(\.$event.$id == event.requireID()).count()
+        let count: Int
+        if let attendeeCount {
+            count = attendeeCount
+        } else {
+            count = try await EventAttendee.query(on: db).filter(\.$event.$id == event.requireID()).count()
+        }
         return EventSummaryDTO(
             id: try event.requireID(),
             title: event.title,
@@ -407,6 +448,14 @@ struct EventService {
     }
 
     private func hostDisplay(for event: Event) async throws -> (String, String?) {
+        // Use the host already loaded with the event (`.with(...)` in
+        // `find`/`filteredEventsPage`) instead of asking again (review).
+        if let loaded = event.$hostUser.value, let hostUser = loaded {
+            return (hostUser.displayName, hostUser.photoURL)
+        }
+        if let loaded = event.$hostGroup.value, let hostGroup = loaded {
+            return (hostGroup.name, hostGroup.avatarURL)
+        }
         if let hostUserID = event.$hostUser.id, let hostUser = try await User.find(hostUserID, on: db) {
             return (hostUser.displayName, hostUser.photoURL)
         }
