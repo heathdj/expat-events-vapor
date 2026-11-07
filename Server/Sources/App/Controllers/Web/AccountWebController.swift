@@ -36,6 +36,19 @@ struct AccountWebController: RouteCollection {
         let hasUpload: Bool
         let photoError: String?
         let photoNotice: String?
+        /// Search & filters PR: kilometres or miles.
+        let unitOptions: [UnitOption]
+        let preferencesNotice: String?
+    }
+
+    struct UnitOption: Encodable {
+        let value: String
+        let label: String
+        let isSelected: Bool
+    }
+
+    struct PreferencesForm: Content {
+        let distanceUnit: String
     }
 
     /// One choice in the photo card. `previewURL` is what it would show;
@@ -76,6 +89,7 @@ struct AccountWebController: RouteCollection {
         // photo gets the friendly message rather than Vapor's bare 413.
         authenticated.on(.POST, "account", "photo", body: .collect(maxSize: "10mb"), use: uploadPhoto)
         authenticated.post("account", "photo", "source", use: choosePhotoSource)
+        authenticated.post("account", "preferences", use: updatePreferences)
         authenticated.post("account", "photo", "remove", use: removePhoto)
     }
 
@@ -155,6 +169,19 @@ struct AccountWebController: RouteCollection {
         }
     }
 
+    /// Search & filters PR: the distance unit `/events` uses.
+    @Sendable
+    func updatePreferences(req: Request) async throws -> Response {
+        let user = try req.auth.require(User.self)
+        guard let form = try? req.content.decode(PreferencesForm.self),
+              let unit = DistanceUnit(rawValue: form.distanceUnit) else {
+            throw Abort(.badRequest)
+        }
+        user.distanceUnit = unit
+        try await user.save(on: req.db)
+        return req.redirect(to: "/account?prefs=saved#preferences")
+    }
+
     /// Criterion #2: the export downloads straight away as a JSON file.
     @Sendable
     func export(req: Request) async throws -> Response {
@@ -208,7 +235,11 @@ struct AccountWebController: RouteCollection {
             photoOptions: Self.photoOptions(for: user),
             hasUpload: user.uploadedPhotoPath != nil,
             photoError: photoError,
-            photoNotice: (try? req.query.get(String.self, at: "photo")).flatMap { Self.photoNotices[$0] }
+            photoNotice: (try? req.query.get(String.self, at: "photo")).flatMap { Self.photoNotices[$0] },
+            unitOptions: DistanceUnit.allCases.map {
+                UnitOption(value: $0.rawValue, label: $0.label, isSelected: $0 == user.distanceUnit)
+            },
+            preferencesNotice: (try? req.query.get(String.self, at: "prefs")) == "saved" ? "Preferences saved." : nil
         ))
     }
 

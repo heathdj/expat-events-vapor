@@ -152,6 +152,7 @@ private func registerMigrations(_ app: Application) {
     app.migrations.add(AddEventLocationFields())
     // Theme PR 2: profile photos.
     app.migrations.add(AddUserPhotoFields())
+    app.migrations.add(AddUserDistanceUnit())
 }
 
 // MARK: - Commands

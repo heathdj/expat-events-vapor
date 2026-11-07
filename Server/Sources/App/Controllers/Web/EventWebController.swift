@@ -18,22 +18,88 @@ import ExpatEventsGeo
 /// (shared with `EventAPIController` via `EventService`) are fully
 /// enforced either way.
 struct EventWebController: RouteCollection {
+    /// `/events`: the filter panel (Search & filters PR) and the first
+    /// page of results.
     struct EventsPageContext: Encodable {
         let title = "Events"
-        let cards: [EventCardView]
-        let filter: EventFilterQuery
         let isSignedIn: Bool
-        /// All / Going / Hosting. Only shown to members (a visitor has
-        /// nothing to be going to or hosting).
-        let tabs: [TabLink]
-        let showTabs: Bool
-        let categories: [CategoryChip]
-        let empty: EmptyState
+        // Results (the same keys `partials/events-results` reads).
+        let cards: [EventCardView]
         let hasNoEvents: Bool
-        /// The next page's URL, with the current filters kept, when there
-        /// is one -- what the "Load more events" button fetches. nil on
-        /// the last page.
+        let empty: EmptyState
+        let resultsStatus: String
+        let isUpdate = false
+        /// The next page's URL, with every filter kept, when there is one
+        /// -- what "Load more events" fetches. nil on the last page.
         let nextPageURL: String?
+        // The filter panel. Every option's state is precomputed (no Leaf
+        // comparisons).
+        /// All / Going / Hosting. Only for members (a visitor has nothing
+        /// to be going to or hosting).
+        let showTabs: Bool
+        let tabs: [FilterOption]
+        let categories: [CategoryOption]
+        let datePresets: [FilterOption]
+        let whenValue: String
+        let from: String
+        let to: String
+        let q: String
+        let yourGroups: [FilterOption]
+        let otherGroups: [FilterOption]
+        let hasYourGroups: Bool
+        let hasOtherGroups: Bool
+        let isAnyGroup: Bool
+        /// "Near a city" uses the place search, which is for members only
+        /// (every lookup costs money with a real provider).
+        let canSearchNear: Bool
+        // `partials/near-field` keys.
+        let near: String
+        let nearLat: String
+        let nearLng: String
+        let nearSession: String
+        let nearSelected: Bool
+        let nearJustPicked = false
+        let nearError: String? = nil
+        let radiusOptions: [FilterOption]
+        let unit: String
+        let tz: String
+        /// Older link filters (city, venue, host, start date) kept as
+        /// hidden fields so changing another filter doesn't drop them.
+        let hiddenFields: [HiddenField]
+        let activeFilterCount: Int
+        let hasActiveFilters: Bool
+        let clearURL: String
+    }
+
+    /// What an htmx filter change gets back (`partials/events-results`).
+    struct EventsResultsContext: Encodable {
+        /// Sends the status line along out of band, so the one live region
+        /// above the results announces the change.
+        let isUpdate = true
+        let cards: [EventCardView]
+        let hasNoEvents: Bool
+        let empty: EmptyState
+        let resultsStatus: String
+        let nextPageURL: String?
+    }
+
+    struct FilterOption: Encodable {
+        let value: String
+        let label: String
+        let isChecked: Bool
+    }
+
+    struct CategoryOption: Encodable {
+        let value: String
+        let label: String
+        /// nil for "All".
+        let imageURL: String?
+        let isChecked: Bool
+    }
+
+    struct HiddenField: Encodable {
+        let name: String
+        let value: String
     }
 
     /// One page of event cards plus the next "Load more" button: what an
@@ -64,20 +130,6 @@ struct EventWebController: RouteCollection {
         let errorMessage: String?
     }
 
-    struct TabLink: Encodable {
-        let label: String
-        let href: String
-        let isActive: Bool
-    }
-
-    struct CategoryChip: Encodable {
-        let label: String
-        let href: String
-        /// nil for "All".
-        let imageURL: String?
-        let isActive: Bool
-    }
-
     struct EmptyState: Encodable {
         let message: String
         let actionLabel: String?
@@ -95,10 +147,6 @@ struct EventWebController: RouteCollection {
             case .hosting: "Hosting"
             }
         }
-    }
-
-    struct TabQuery: Content {
-        let tab: String?
     }
 
     struct CardViewQuery: Content {
@@ -201,87 +249,182 @@ struct EventWebController: RouteCollection {
         authenticated.post("events", ":eventID", "leave", use: leave)
     }
 
-    /// `/events`. A normal request renders the whole page with the first
-    /// (or requested) page of events; an htmx request -- the "Load more
-    /// events" button -- gets just the next page's cards and the next
-    /// button (architecture §6's `GET /events?page=N`). `?tab=going` /
-    /// `?tab=hosting` narrow it to the member's own events (visitors
-    /// always get All).
+    /// `/events`. A normal request renders the whole page; an htmx
+    /// request gets just what changed: a filter change (`HX-Target:
+    /// ev-results`) the results, and "Load more" the next page's cards and
+    /// button (architecture §6's `GET /events?page=N`). Filters arrive as
+    /// the panel's form fields (`EventsSearch`); `?tab=going` /
+    /// `?tab=hosting` narrow the list to the member's own events
+    /// (visitors always get All). Upcoming only, unless dates are picked.
     @Sendable
     func dashboard(req: Request) async throws -> Response {
-        let filter = try req.query.decode(EventFilterQuery.self)
-        let requesterID = req.auth.get(User.self).flatMap { try? $0.requireID() }
-        let tab: ListTab = requesterID == nil
-            ? .all
-            : ((try? req.query.decode(TabQuery.self))?.tab.flatMap(ListTab.init(rawValue:)) ?? .all)
+        let user = req.auth.get(User.self)
+        let requesterID = user.flatMap { try? $0.requireID() }
+        let form = (try? req.query.decode(EventsSearch.Form.self)) ?? EventsSearch.Form()
+        let search = EventsSearch.parse(form, isSignedIn: requesterID != nil, preferredUnit: user?.distanceUnit ?? .km)
         let scope: EventService.ListScope
-        switch (tab, requesterID) {
+        switch (search.tab, requesterID) {
         case (.going, let id?): scope = .going(id)
         case (.hosting, let id?): scope = .hosting(id)
         default: scope = .all
         }
         let service = EventService(db: req.db)
-        let page = try await service.filteredEventsPage(filter, requesterID: requesterID, scope: scope)
+        let page = try await service.filteredEventsPage(search.filter(), requesterID: requesterID, scope: scope)
         let cards = try await Self.cardViews(for: page.events, requesterID: requesterID, on: req.db)
-        let currentPage = EventService.clampedPage(filter)
-        let nextPageURL = page.hasMore && currentPage < EventService.maxPage
-            ? Self.pageURL(for: filter, page: currentPage + 1, tab: tab)
-            : nil
+        let nextPageURL = page.hasMore && search.page < EventService.maxPage ? search.url(page: search.page + 1) : nil
+        let empty = Self.emptyState(for: search)
+        let status = Self.resultsStatus(count: cards.count, hasMore: page.hasMore)
 
+        // htmx restoring a page missing from its history cache asks for
+        // the whole page, with HX-Request set.
+        let isPartial = req.headers.first(name: "HX-Request") != nil
+            && req.headers.first(name: "HX-History-Restore-Request") == nil
         let response: Response
-        if req.headers.first(name: "HX-Request") != nil {
+        if isPartial, req.headers.first(name: "HX-Target") == "ev-results" {
+            response = try await req.view.render("partials/events-results", EventsResultsContext(
+                cards: cards, hasNoEvents: cards.isEmpty, empty: empty, resultsStatus: status, nextPageURL: nextPageURL
+            )).encodeResponse(for: req)
+            // The address bar gets the tidy URL (only what's set), not the
+            // form's every field.
+            response.headers.replaceOrAdd(name: "HX-Push-Url", value: search.url())
+        } else if isPartial {
             response = try await req.view.render("partials/event-cards", EventCardsContext(
                 cards: cards,
                 nextPageURL: nextPageURL
             )).encodeResponse(for: req)
         } else {
+            let groups = try await Self.groupOptions(for: requesterID, selected: search.groupID, on: req.db)
+            let chosenRadius = search.radius ?? search.unit.defaultRadius
             response = try await req.view.render("pages/events", EventsPageContext(
-                cards: cards,
-                filter: filter,
                 isSignedIn: requesterID != nil,
-                tabs: ListTab.allCases.map { option in
-                    TabLink(label: option.label, href: Self.listURL(for: filter, tab: option), isActive: option == tab)
-                },
-                showTabs: requesterID != nil,
-                categories: Self.categoryChips(for: filter, tab: tab),
-                empty: Self.emptyState(for: tab, filter: filter),
+                cards: cards,
                 hasNoEvents: cards.isEmpty,
-                nextPageURL: nextPageURL
+                empty: empty,
+                resultsStatus: status,
+                nextPageURL: nextPageURL,
+                showTabs: requesterID != nil,
+                tabs: ListTab.allCases.map { FilterOption(value: $0.rawValue, label: $0.label, isChecked: $0 == search.tab) },
+                categories: Self.categoryOptions(selected: search.category),
+                datePresets: EventsSearch.DatePreset.allCases.map {
+                    FilterOption(value: $0.rawValue, label: $0.label, isChecked: $0 == search.when)
+                },
+                whenValue: search.when.rawValue,
+                from: search.from ?? "",
+                to: search.to ?? "",
+                q: search.text ?? "",
+                yourGroups: groups.yours,
+                otherGroups: groups.others,
+                hasYourGroups: !groups.yours.isEmpty,
+                hasOtherGroups: !groups.others.isEmpty,
+                isAnyGroup: search.groupID == nil,
+                canSearchNear: requesterID != nil,
+                near: search.nearLabel ?? "",
+                nearLat: search.nearLatitude.map { String($0) } ?? "",
+                nearLng: search.nearLongitude.map { String($0) } ?? "",
+                nearSession: UUID().uuidString,
+                nearSelected: search.hasNear,
+                radiusOptions: search.unit.radiusOptions.map {
+                    FilterOption(value: EventsSearch.number($0), label: "\(EventsSearch.number($0)) \(search.unit.shortLabel)", isChecked: $0 == chosenRadius)
+                },
+                unit: search.unit.rawValue,
+                tz: search.timeZoneIdentifier ?? "",
+                hiddenFields: Self.hiddenFields(for: search, isSignedIn: requesterID != nil),
+                activeFilterCount: search.activeFilterCount,
+                hasActiveFilters: search.activeFilterCount > 0,
+                clearURL: Self.clearURL(for: search)
             )).encodeResponse(for: req)
         }
-        // Same URL, two different bodies: tell caches (and htmx's own
-        // history cache) the response depends on the HX-Request header.
-        response.headers.replaceOrAdd(name: .vary, value: "HX-Request")
+        // Same URL, different bodies: tell caches (and htmx's own history
+        // cache) the response depends on these headers.
+        response.headers.replaceOrAdd(name: .vary, value: "HX-Request, HX-Target, HX-History-Restore-Request")
         return response
     }
 
-    /// "All" plus one chip per category (all six, with the category's
-    /// photo), each keeping the other filters and the tab.
-    static func categoryChips(for filter: EventFilterQuery, tab: ListTab) -> [CategoryChip] {
-        let all = CategoryChip(label: "All", href: listURL(for: filter.with(category: nil), tab: tab),
-                               imageURL: nil, isActive: filter.category == nil)
-        return [all] + EventCategory.allCases.map { category in
-            CategoryChip(label: category.rawValue.capitalized,
-                         href: listURL(for: filter.with(category: category), tab: tab),
-                         imageURL: imageURL(for: category),
-                         isActive: filter.category == category)
+    /// "All" plus all six categories, each with its photo.
+    static func categoryOptions(selected: EventCategory?) -> [CategoryOption] {
+        [CategoryOption(value: "", label: "All", imageURL: nil, isChecked: selected == nil)]
+            + EventCategory.allCases.map { category in
+                CategoryOption(value: category.rawValue, label: category.rawValue.capitalized,
+                               imageURL: imageURL(for: category), isChecked: selected == category)
+            }
+    }
+
+    /// The group picker: the member's own groups, then every public group,
+    /// by name.
+    static func groupOptions(for requesterID: UUID?, selected: UUID?, on db: Database) async throws -> (yours: [FilterOption], others: [FilterOption]) {
+        var yours: [Group] = []
+        if let requesterID {
+            yours = try await GroupMembership.query(on: db)
+                .filter(\.$user.$id == requesterID)
+                .with(\.$group)
+                .all()
+                .map(\.group)
+        }
+        let yourIDs = Set(yours.compactMap(\.id))
+        let others = try await GroupService(db: db).publicGroups().filter { group in
+            group.id.map { !yourIDs.contains($0) } ?? false
+        }
+        // Only the member's own groups and public groups are offered: a
+        // UUID in the link never reveals an invite-only group's name
+        // (review).
+        func options(_ groups: [Group]) -> [FilterOption] {
+            groups.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }.compactMap { group in
+                group.id.map { FilterOption(value: $0.uuidString, label: group.name, isChecked: $0 == selected) }
+            }
+        }
+        return (options(yours), options(others))
+    }
+
+    static func hiddenFields(for search: EventsSearch, isSignedIn: Bool) -> [HiddenField] {
+        var fields: [HiddenField] = []
+        if let city = search.city { fields.append(HiddenField(name: "city", value: city)) }
+        if let venue = search.venue { fields.append(HiddenField(name: "venue", value: venue)) }
+        if let hostUserID = search.hostUserID { fields.append(HiddenField(name: "hostUserID", value: hostUserID.uuidString)) }
+        if let start = search.onOrAfterDate {
+            fields.append(HiddenField(name: "onOrAfterDate", value: String(start.timeIntervalSince1970)))
+        }
+        // A visitor can't use the Near field, but a shared link's city is
+        // kept when they change another filter.
+        if !isSignedIn, let lat = search.nearLatitude, let lng = search.nearLongitude {
+            fields.append(HiddenField(name: "near", value: search.nearLabel ?? ""))
+            fields.append(HiddenField(name: "nearLat", value: String(lat)))
+            fields.append(HiddenField(name: "nearLng", value: String(lng)))
+            fields.append(HiddenField(name: "radius", value: EventsSearch.number(search.radius ?? search.unit.defaultRadius)))
+            fields.append(HiddenField(name: "unit", value: search.unit.rawValue))
+        }
+        return fields
+    }
+
+    /// Everything cleared but the tab.
+    static func clearURL(for search: EventsSearch) -> String {
+        search.tab == .all ? "/events" : "/events?tab=\(search.tab.rawValue)"
+    }
+
+    /// Announced to screen readers when the results change.
+    static func resultsStatus(count: Int, hasMore: Bool) -> String {
+        switch count {
+        case 0: "No events found"
+        case 1: "1 event"
+        default: hasMore ? "Showing the first \(count) events" : "\(count) events"
+        }
+    }
+
+    static func emptyState(for search: EventsSearch) -> EmptyState {
+        if search.activeFilterCount > 0 {
+            return EmptyState(message: "No events match these filters.", actionLabel: "Clear filters", actionHref: clearURL(for: search))
+        }
+        switch search.tab {
+        case .going:
+            return EmptyState(message: "You haven't joined any upcoming events yet.", actionLabel: "Browse all events", actionHref: "/events")
+        case .hosting:
+            return EmptyState(message: "You're not hosting any upcoming events yet.", actionLabel: "Create an event", actionHref: "/events/new")
+        case .all:
+            return EmptyState(message: "No upcoming events yet.", actionLabel: nil, actionHref: nil)
         }
     }
 
     static func imageURL(for category: EventCategory) -> String {
         "/design/categories/\(category.rawValue).jpg"
-    }
-
-    static func emptyState(for tab: ListTab, filter: EventFilterQuery) -> EmptyState {
-        switch tab {
-        case .going:
-            EmptyState(message: "You haven't joined any events here yet.", actionLabel: "Browse all events",
-                       actionHref: listURL(for: filter, tab: .all))
-        case .hosting:
-            EmptyState(message: "You're not hosting any events here yet.", actionLabel: "Create an event", actionHref: "/events/new")
-        case .all:
-            EmptyState(message: "No events match these filters yet.", actionLabel: nil, actionHref: nil)
-        }
     }
 
     /// The card view for each event, in order: the summary, a short
@@ -669,13 +812,5 @@ extension EventWebController.EventCardView {
         Self(event: event, url: url, imageURL: imageURL, categoryLabel: categoryLabel,
              descriptionPreview: descriptionPreview, attendeePhotos: attendeePhotos, attendeeText: attendeeText,
              isSignedIn: isSignedIn, isAttending: isAttending, isHost: isHost, errorMessage: message)
-    }
-}
-
-extension EventFilterQuery {
-    /// The same filter with another category (nil for all), from page 1.
-    func with(category: EventCategory?) -> EventFilterQuery {
-        EventFilterQuery(category: category, city: city, venue: venue, hostUserID: hostUserID,
-                         hostGroupID: hostGroupID, onOrAfterDate: onOrAfterDate, page: nil)
     }
 }

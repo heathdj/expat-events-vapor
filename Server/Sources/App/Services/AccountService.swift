@@ -88,7 +88,8 @@ struct AccountService {
                 photoSource: user.photoSource?.rawValue,
                 googlePhotoURL: user.googlePhotoURL,
                 uploadedPhotoURL: user.uploadedPhotoPath,
-                gravatarOptedIn: user.photoSource == .gravatar
+                gravatarOptedIn: user.photoSource == .gravatar,
+                distanceUnit: user.distanceUnit.rawValue
             ),
             hostedEvents: try hostedEvents.map {
                 .init(

@@ -217,6 +217,50 @@ Not started — and can't meaningfully proceed without the DigitalOcean/Stripe/A
 - **Found at the checkpoint**: a picked venue showed only its street address (Google's formatted address for a business leaves the name out), so the event page read as an address with no place name. A picked venue is now saved as "Name, address" (`ResolvedPlace.label(for:)`), unless the address already contains the name; cities keep their formatted address. Events created before the fix keep their address-only text.
 - Not in this PR: the map itself on the event page (the Event detail restyle), and the Apple adapter (before launch). **Launch note**: if Google is still the provider at launch, its terms only allow keeping coordinates 30 days, so a refresh job using the stored place IDs would be needed. **M13 notes**: the deploy image needs a Swift 6.0+ toolchain, the `tzf-swift_tzf.resources` bundle copied next to the binary, and `tzdata` installed on Linux. **For the Create event restyle**: label the suggestion list for screen readers (listbox/option roles, keyboard selection) and show the event's zone next to the date and time field.
 
+**Search & filters (theme PR 5 of 9)**: the `/events` filter panel, requested by the user after the Events PR. Decisions (user's): upcoming by default; date presets plus From/To; distances in km by default with a per-member setting for miles; the list updates instantly.
+
+- **One filter form** in the left panel (behind a "Filters" button with a count on phones):
+  - Text search.
+  - All / Going / Hosting (members).
+  - When: Upcoming, Today, This weekend, Next 7 days, This month, or Pick dates (From/To).
+  - Category chips.
+  - Near a city, within a distance.
+  - Group.
+- **Instant updates.** Every change reloads just the results over htmx; text search waits 400 ms. The server sends back the tidy address (`HX-Push-Url`, only what's set) so a search can be shared or bookmarked. A history restore gets the whole page. The status line ("12 events") is one live region, updated out of band. Without JavaScript it's a plain GET form with an Apply button. `hx-disinherit` keeps the form's htmx settings off the city search inside it.
+- **Upcoming by default.** All, Going and Hosting start from now; picked dates can reach into the past. Presets use the viewer's time zone, which the page sends as `tz` (UTC when unknown). Today and the weekend cover whole days.
+- **Text search** covers the title and description, case-insensitive (`ILIKE`). `%` and `_` match literally.
+- **Group:** the member's own groups, then every public group, by name. Someone else's invite-only group is never offered. Older `?hostGroupID=` links still work.
+- **Near a city:**
+  - Members pick a city with the existing place search (`/places/suggest` and `/places/select` with `field=near`, new `partials/near-field`). Visitors are offered sign-in, since place lookups cost money.
+  - Distance is measured in SQL (haversine) from the venue's coordinates, or the city's when the venue has none, capped at 500 km.
+  - Choices are 10 / 25 / 50 / 100 km (default 25) or 5 / 15 / 30 / 60 mi (default 15). A shared link in the other unit snaps to the nearest choice.
+- **Distance unit** on `/account` ("Preferences": Kilometres or Miles). New migration `AddUserDistanceUnit` (`distance_unit`, optional; nil means km). It's included in the data export.
+- **API:** `EventFilterQuery` gains `onOrBeforeDate`, `search`, `nearLatitude`, `nearLongitude` and `radiusKm` (all optional), so `/api/v1/events` takes them too. The API's own default is unchanged (no upcoming-only default).
+- **Web parsing** is `EventsSearch` (`Controllers/Web/EventsSearch.swift`): lenient, so a blank or odd value means "not filtered", never a 400.
+- **Fixed from its independent review:**
+  - **Blocker:** a date the database can't store (`?onOrAfterDate=1e13`, `nan`, or the API's `onOrBeforeDate`) made the database driver trap and crash the server. Out-of-range dates (outside 1900–2200) are now ignored (`EventService.saneDate`). The old `onOrAfterDate` had the same hole.
+  - A UUID in `?group=` no longer reveals an invite-only group's name in the picker.
+  - Back shows the filters that were used: `hx-history="false"` makes htmx ask the server, since a saved snapshot loses checked radios and typed text.
+  - Picking a city sends one request instead of two: the near and search boxes don't send on blur.
+  - The status line's text is updated inside the live region (`hx-swap-oob="innerHTML"`), so it's announced.
+  - "Upcoming" keeps events that started up to three hours ago, since events have no end time.
+- **Smaller fixes:**
+  - Search needs every word, in any order ("night jazz" finds "Jazz Night").
+  - The time zone always comes from the viewer's browser.
+  - A visitor keeps a shared link's city when changing other filters.
+  - An old `onOrAfterDate` link counts as an active filter.
+  - The Filters button has `aria-expanded` before Alpine loads.
+- **Known, not fixed:**
+  - Load more works out "now" again, so an event starting between clicks can be skipped.
+  - The panel's Clear link and filter count only update on a full page load.
+  - Distance and text search scan the remaining rows (fine at MVP scale; a bounding box or `pg_trgm` later).
+- **Closes the M4 gap where web pages turned an `APIError` into a 500**, since `APIErrorMiddleware` only wraps `/api/v1`. `APIError` is now an `AbortError` with the API's own status, so the web gets the same codes: 404 for a private event you can't see, 403 for forbidden, 400 for bad input. This was found because the Events PR's card test expected a 404 and had been failing since PR #20; the two M4 tests that pinned the 500 now expect 404.
+- **Fixed from QA on PR #21:**
+  - (P2) Editing or clearing a picked city now refreshes the results, since it drops the city's coordinates; before, the list stayed filtered by the old city.
+  - (P2) Date ranges end at the next day's or month's first instant, exclusive (`EventFilterQuery.beforeDate`), instead of an inclusive 23:59:59. Before, events in the last second were missed.
+- **Human checkpoint:** passed.
+- 10 tests (`SearchFiltersTests.swift`). The Events PR tests follow the radio-button tabs and chips.
+
 **Events (theme PR 4 of 9)**: `/events` restyled from the canvas's Events artboard.
 
 - **Header** "Discover events". No live indicator (user's decision: the list doesn't update live, so it would mislead).

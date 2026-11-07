@@ -1,4 +1,5 @@
 import Fluent
+import FluentSQL
 import Vapor
 import ExpatEventsAPI
 import ExpatEventsGeo
@@ -123,8 +124,33 @@ struct EventService {
         if let hostGroupID = filter.hostGroupID {
             query = query.filter(\.$hostGroup.$id == hostGroupID)
         }
-        if let onOrAfterDate = filter.onOrAfterDate {
+        // Out-of-range dates are ignored: the database driver traps on a
+        // date it can't encode (e.g. ?onOrAfterDate=1e13), which would take
+        // the whole server down (review).
+        if let onOrAfterDate = Self.saneDate(filter.onOrAfterDate) {
             query = query.filter(\.$date >= onOrAfterDate)
+        }
+        if let onOrBeforeDate = Self.saneDate(filter.onOrBeforeDate) {
+            query = query.filter(\.$date <= onOrBeforeDate)
+        }
+        if let beforeDate = Self.saneDate(filter.beforeDate) {
+            query = query.filter(\.$date < beforeDate)
+        }
+        // Every word must appear in the title or description, any case
+        // (so "night jazz" finds "Jazz Night"); % and _ match literally.
+        for pattern in Self.searchPatterns(filter.search) {
+            let condition: SQLQueryString =
+                "(\"events\".\"title\" ILIKE \(bind: pattern) OR \"events\".\"description\" ILIKE \(bind: pattern))"
+            query = query.filter(.custom(condition))
+        }
+        if let near = Self.nearFilter(filter) {
+            // Great-circle distance (haversine, km) from the venue, or the
+            // city when the venue has no coordinates (0, 0).
+            let lat = #"(CASE WHEN "events"."venue_lat" <> 0 OR "events"."venue_lng" <> 0 THEN "events"."venue_lat" ELSE "events"."city_lat" END)"#
+            let lng = #"(CASE WHEN "events"."venue_lat" <> 0 OR "events"."venue_lng" <> 0 THEN "events"."venue_lng" ELSE "events"."city_lng" END)"#
+            let condition: SQLQueryString =
+                "(12742 * asin(LEAST(1, sqrt(power(sin(radians(\(unsafeRaw: lat) - \(bind: near.latitude)) / 2), 2) + cos(radians(\(bind: near.latitude))) * cos(radians(\(unsafeRaw: lat))) * power(sin(radians(\(unsafeRaw: lng) - \(bind: near.longitude)) / 2), 2)))) <= \(bind: near.radiusKm))"
+            query = query.filter(.custom(condition))
         }
 
         let pageSize = Self.pageSize
@@ -147,6 +173,44 @@ struct EventService {
             }
         }
         return (visible, hasMore)
+    }
+
+    /// Longest search text used; the page's field allows the same.
+    static let maxSearchLength = 100
+    /// The widest "near" radius honoured.
+    static let maxRadiusKm: Double = 500
+
+    /// One `%word%` ILIKE pattern per word (at most 6), with `\\`, `%`
+    /// and `_` escaped; empty for blank text.
+    static func searchPatterns(_ text: String?) -> [String] {
+        guard let text else { return [] }
+        let words = String(text.prefix(maxSearchLength)).split(whereSeparator: \.isWhitespace).prefix(6)
+        return words.map { word in
+            let escaped = String(word)
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "%", with: "\\%")
+                .replacingOccurrences(of: "_", with: "\\_")
+            return "%" + escaped + "%"
+        }
+    }
+
+    /// Dates from 1900 to 2200 that the database can store; anything else
+    /// (NaN, infinite, year 300,000) is ignored.
+    static let saneDates = Date(timeIntervalSince1970: -2_208_988_800)...Date(timeIntervalSince1970: 7_258_118_400)
+
+    static func saneDate(_ date: Date?) -> Date? {
+        guard let date, date.timeIntervalSince1970.isFinite, saneDates.contains(date) else { return nil }
+        return date
+    }
+
+    /// The point and radius to search around, when all three are present
+    /// and sensible (radius clamped to 1...500 km).
+    static func nearFilter(_ filter: EventFilterQuery) -> (latitude: Double, longitude: Double, radiusKm: Double)? {
+        guard let latitude = filter.nearLatitude, let longitude = filter.nearLongitude, let radius = filter.radiusKm,
+              latitude.isFinite, longitude.isFinite, radius.isFinite,
+              (-90...90).contains(latitude), (-180...180).contains(longitude), radius > 0
+        else { return nil }
+        return (latitude, longitude, min(max(radius, 1), maxRadiusKm))
     }
 
     // MARK: - Mutations

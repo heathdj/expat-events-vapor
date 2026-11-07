@@ -272,8 +272,9 @@ public struct UpdateEventRequest: Codable, Sendable, Equatable {
     }
 }
 
-/// Query params accepted by `GET /api/v1/events` and the web `/events/filter`
-/// endpoint (architecture doc §6): category, city, venue, host, and date.
+/// Query params accepted by `GET /api/v1/events` (architecture doc §6):
+/// category, city, venue, host, dates, text search and distance. The web
+/// page parses its own form into one of these (`EventsSearch`).
 public struct EventFilterQuery: Codable, Sendable, Equatable {
     public let category: EventCategory?
     public let city: String?
@@ -281,6 +282,18 @@ public struct EventFilterQuery: Codable, Sendable, Equatable {
     public let hostUserID: UUID?
     public let hostGroupID: UUID?
     public let onOrAfterDate: Date?
+    /// Search & filters PR: the end of a date range, inclusive.
+    public let onOrBeforeDate: Date?
+    /// The end of a date range, exclusive: the first instant after it (a
+    /// day or month boundary), so nothing just before midnight is missed.
+    public let beforeDate: Date?
+    /// Words to find in the title or description (case-insensitive).
+    public let search: String?
+    /// Events within `radiusKm` of this point (the venue's coordinates,
+    /// or the city's when the venue has none). All three are needed.
+    public let nearLatitude: Double?
+    public let nearLongitude: Double?
+    public let radiusKm: Double?
     public let page: Int?
 
     public init(
@@ -290,6 +303,12 @@ public struct EventFilterQuery: Codable, Sendable, Equatable {
         hostUserID: UUID? = nil,
         hostGroupID: UUID? = nil,
         onOrAfterDate: Date? = nil,
+        onOrBeforeDate: Date? = nil,
+        beforeDate: Date? = nil,
+        search: String? = nil,
+        nearLatitude: Double? = nil,
+        nearLongitude: Double? = nil,
+        radiusKm: Double? = nil,
         page: Int? = nil
     ) {
         self.category = category
@@ -298,6 +317,12 @@ public struct EventFilterQuery: Codable, Sendable, Equatable {
         self.hostUserID = hostUserID
         self.hostGroupID = hostGroupID
         self.onOrAfterDate = onOrAfterDate
+        self.onOrBeforeDate = onOrBeforeDate
+        self.beforeDate = beforeDate
+        self.search = search
+        self.nearLatitude = nearLatitude
+        self.nearLongitude = nearLongitude
+        self.radiusKm = radiusKm
         self.page = page
     }
 }

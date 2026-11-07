@@ -74,7 +74,7 @@ final class EventsPageTests: XCTestCase {
                 XCTAssertTrue(html.contains("Bob Quiz Night"))
                 XCTAssertFalse(html.contains("Alice Picnic"))
                 XCTAssertFalse(html.contains("Club Walk"))
-                XCTAssertTrue(html.contains(#"<a href="/events?tab=going" class="ev-tab is-active" aria-current="page">Going</a>"#))
+                XCTAssertTrue(html.contains(#"<input type="radio" name="tab" value="going" checked>"#))
                 XCTAssertTrue(html.contains("/leave?view=card"), "A joined event's card offers Going (leave).")
             }
             try await app.test(.GET, "/events?tab=hosting", headers: ["Cookie": aliceCookie]) { res async in
@@ -87,12 +87,12 @@ final class EventsPageTests: XCTestCase {
             try await app.test(.GET, "/events", headers: ["Cookie": aliceCookie]) { res async in
                 let html = res.body.string
                 XCTAssertEqual(html.components(separatedBy: "data-event-card").count - 1, 3)
-                XCTAssertTrue(html.contains(#"<a href="/events" class="ev-tab is-active" aria-current="page">All</a>"#))
+                XCTAssertTrue(html.contains(#"<input type="radio" name="tab" value="all" checked>"#))
             }
             try await app.test(.GET, "/events?tab=going", headers: ["Cookie": try await sessionCookie(for: bob, db: app.db)]) { res async in
                 let html = res.body.string
                 XCTAssertTrue(html.contains("data-events-empty"))
-                XCTAssertTrue(html.contains("joined any events here yet"))
+                XCTAssertTrue(html.contains("joined any upcoming events yet"))
             }
             try await app.test(.GET, "/events?tab=going") { res async in
                 let html = res.body.string
@@ -103,9 +103,10 @@ final class EventsPageTests: XCTestCase {
         }
     }
 
-    /// "All" plus all six categories with their photos; each chip keeps
-    /// the tab, and the current one is marked.
-    func testCategoryChipsKeepTheTabAndShowPhotos() async throws {
+    /// "All" plus all six categories with their photos, as radio buttons
+    /// in the filter form (so they keep the tab and every other filter);
+    /// the current one is checked.
+    func testCategoryChipsShowPhotosAndTheCurrentChoice() async throws {
         try await withApp { app in
             let alice = try await makeUser(db: app.db, email: "alice@example.com", name: "Alice")
             _ = try await makeEvent(app, title: "Tapas Exchange", host: alice, category: .food)
@@ -114,18 +115,15 @@ final class EventsPageTests: XCTestCase {
 
             try await app.test(.GET, "/events?tab=hosting&category=food", headers: ["Cookie": cookie]) { res async in
                 let html = res.body.string
-                let chips = html.components(separatedBy: #"class="ev-chip""#).count - 1
-                    + html.components(separatedBy: #"class="ev-chip is-active""#).count - 1
-                XCTAssertEqual(chips, 7)
+                XCTAssertEqual(html.components(separatedBy: #"name="category""#).count - 1, 7)
                 for category in EventCategory.allCases {
                     XCTAssertTrue(html.contains("/design/categories/\(category.rawValue).jpg"), "\(category) chip has its photo.")
                 }
-                XCTAssertTrue(html.contains(#"<a href="/events?tab=hosting&amp;category=food" class="ev-chip is-active" aria-current="true">"#))
-                XCTAssertTrue(html.contains(#"<a href="/events?tab=hosting&amp;category=film" class="ev-chip">"#))
-                XCTAssertTrue(html.contains(#"<a href="/events?tab=hosting" class="ev-chip">"#), "All keeps the tab.")
+                XCTAssertTrue(html.contains(#"<input type="radio" name="category" value="food" checked>"#))
+                XCTAssertTrue(html.contains(#"<input type="radio" name="category" value="film">"#))
+                XCTAssertTrue(html.contains(#"<input type="radio" name="tab" value="hosting" checked>"#))
                 XCTAssertTrue(html.contains("Tapas Exchange"))
                 XCTAssertFalse(html.contains("Jazz Night"))
-                XCTAssertTrue(html.contains(#"href="/events?tab=going&amp;category=food""#), "Tabs keep the category (& escaped in the attribute).")
             }
         }
     }

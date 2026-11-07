@@ -75,9 +75,14 @@ public struct AccountDataExportDTO: Codable, Sendable, Equatable {
         public let googlePhotoURL: String?
         public let uploadedPhotoURL: String?
         public let gravatarOptedIn: Bool
+        /// Distance unit for the events page ("km" or "mi"; Search &
+        /// filters PR).
+        public let distanceUnit: String?
 
         public init(id: UUID, displayName: String, email: String, photoURL: String?, plan: PlanTier, createdAt: Date?, privacyPolicyVersion: String, termsVersion: String, consentedAt: Date,
-                    photoSource: String? = nil, googlePhotoURL: String? = nil, uploadedPhotoURL: String? = nil, gravatarOptedIn: Bool = false) {
+                    photoSource: String? = nil, googlePhotoURL: String? = nil, uploadedPhotoURL: String? = nil, gravatarOptedIn: Bool = false,
+                    distanceUnit: String? = nil) {
+            self.distanceUnit = distanceUnit
             self.photoSource = photoSource
             self.googlePhotoURL = googlePhotoURL
             self.uploadedPhotoURL = uploadedPhotoURL
