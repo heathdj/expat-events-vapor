@@ -19,6 +19,8 @@ struct ChatWebController: RouteCollection {
     /// comment.
     private struct MessageContext: Encodable {
         let message: ChatMessageDTO
+        /// Event detail PR: the same row fields the page's history uses.
+        let row: EventWebController.ChatRow
     }
 
     func boot(routes: RoutesBuilder) throws {
@@ -91,8 +93,8 @@ struct ChatWebController: RouteCollection {
         // history") is fully satisfied by that server-rendered page load
         // alone; this socket's job from here on is strictly new messages
         // sent from this point forward, not a history replay.
-        ws.onText { _, text in
-            await Self.receive(text: text, eventID: eventID, userID: userID, req: req, registry: registry)
+        ws.onText { socket, text in
+            await Self.receive(text: text, eventID: eventID, userID: userID, req: req, registry: registry, socket: socket)
         }
 
         ws.onClose.whenComplete { _ in
@@ -102,7 +104,7 @@ struct ChatWebController: RouteCollection {
         }
     }
 
-    private static func receive(text: String, eventID: UUID, userID: UUID, req: Request, registry: ChatRoomRegistry) async {
+    private static func receive(text: String, eventID: UUID, userID: UUID, req: Request, registry: ChatRoomRegistry, socket: WebSocket) async {
         do {
             let data = Data(text.utf8)
             let sendRequest = try JSONDecoder().decode(SendChatMessageRequest.self, from: data)
@@ -110,20 +112,39 @@ struct ChatWebController: RouteCollection {
             let dto = try message.toDTO()
             let html = try await Self.render(req: req, dto: dto)
             await registry.broadcast(html, to: eventID)
+        } catch let error as APIError {
+            // Event detail PR review: a refused message used to vanish
+            // silently. The sender (only) gets the reason in the chat box.
+            req.logger.notice("Chat message refused: \(error.code)")
+            await Self.sendError(error.message, req: req, socket: socket)
         } catch {
-            // Doesn't send a `.error` envelope back — M5's client is
-            // HTML-only (see ChatRoomRegistry's doc comment), and there's
-            // no agreed-on HTML shape yet for an inline chat-send error.
-            // A malformed/rejected send just doesn't appear, which is a
-            // silent failure worth improving in a follow-up, not a
-            // security concern (ChatService.send already independently
-            // re-validates everything regardless of what the client sent).
+            // Anything else (a malformed frame, a database error): the
+            // sender gets a generic line in the chat box (HTML, like the
+            // rest of the M5 client; see ChatRoomRegistry's doc comment).
             req.logger.error("Chat message decode/send failed: \(error)")
+            await Self.sendError("That message couldn't be sent. Please try again.", req: req, socket: socket)
         }
     }
 
+    private struct ErrorContext: Encodable {
+        let message: String
+    }
+
+    /// Replaces the chat box's error line (`#chat-error`) for this socket
+    /// only.
+    private static func sendError(_ message: String, req: Request, socket: WebSocket) async {
+        guard let view = try? await req.view.render("partials/chat-error-oob", ErrorContext(message: message)) else { return }
+        try? await socket.send(String(buffer: view.data))
+    }
+
     private static func render(req: Request, dto: ChatMessageDTO) async throws -> String {
-        let view = try await req.view.render("partials/chat-message-oob", MessageContext(message: dto))
+        // A reply names the message it answers.
+        var replyToName: String?
+        if let parentID = dto.parentID, let parent = try await ChatMessage.query(on: req.db).filter(\.$id == parentID).with(\.$user).first() {
+            replyToName = parent.user.displayName
+        }
+        let row = EventWebController.chatRow(dto, replyToName: replyToName)
+        let view = try await req.view.render("partials/chat-message-oob", MessageContext(message: dto, row: row))
         return String(buffer: view.data)
     }
 }

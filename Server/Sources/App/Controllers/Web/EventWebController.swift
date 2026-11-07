@@ -153,6 +153,9 @@ struct EventWebController: RouteCollection {
         let view: String?
     }
 
+    /// `/events/:id` (Event detail PR, from the canvas's EventDetail
+    /// artboard). The fields after `chatHistory` have defaults so older
+    /// call sites (and tests) that render the page directly still work.
     struct EventDetailPageContext: Encodable {
         let title: String
         let event: EventDTO
@@ -167,16 +170,79 @@ struct EventWebController: RouteCollection {
         /// page). This field alone is what satisfies M5 acceptance
         /// criterion #6 ("reload... still shows full history").
         let chatHistory: [ChatMessageDTO]
+        var hero = DetailHero()
+        var people = DetailPeople()
+        var place = DetailPlace()
+        var chatRows: [ChatRow] = []
+        var hasNoMessages = true
+        /// The signed-in member's ID, so the page can tell its own chat
+        /// messages (the live ones are broadcast to everyone alike).
+        var currentUserID = ""
+        let isUpdate = false
     }
 
-    /// Same shape as `EventDetailPageContext` minus the page-level `title`
-    /// — this is what `partials/event-fragment.leaf` actually reads,
-    /// whether it's rendered inline (via `#extend`, sharing the full
-    /// page's context) or standalone (an htmx fragment response below).
+    /// Same keys as the page minus `title`: what `partials/event-fragment`
+    /// (the action bar) reads, inline or as the htmx answer to Join,
+    /// Going or Cancel. That answer also carries the attendee list out of
+    /// band (`isUpdate`), since the two sit in different columns.
     struct EventFragmentContext: Encodable {
         let event: EventDTO
         let isSignedIn: Bool
         let canManage: Bool
+        var people = DetailPeople()
+        var isUpdate = true
+    }
+
+    /// The photo banner: the category's photo, title, date and place.
+    struct DetailHero: Encodable {
+        var imageURL = ""
+        var categoryLabel = ""
+    }
+
+    /// The host line, and the side card's Host and Going sections.
+    struct DetailPeople: Encodable {
+        var hostURL: String? = nil
+        var hostIsGroup = false
+        /// The host (a member or a group), always shown in its own section
+        /// (user's decision at the checkpoint: "0 people going" with the
+        /// host under it read wrongly).
+        var host: PersonRow? = nil
+        var goingText = ""
+        /// Everyone going; a host who is also going is tagged Host.
+        var rows: [PersonRow] = []
+        var hasGoing = false
+    }
+
+    struct PersonRow: Encodable {
+        let name: String
+        let photoURL: String?
+        let profileURL: String
+        let isYou: Bool
+        let isHost: Bool
+        /// "Owner" or "Moderator" of the group hosting the event (user's
+        /// request at the Event detail checkpoint).
+        var roleLabel: String? = nil
+    }
+
+    /// Where it is: the venue (or city) text, the map picture's address
+    /// (when there are coordinates) and a link to open it in Google Maps.
+    struct DetailPlace: Encodable {
+        var label = ""
+        var hasMap = false
+        var mapURL = ""
+        var directionsURL: String? = nil
+    }
+
+    /// One chat message on the page. Replies show who they answer;
+    /// `threadID` is what a reply to this message points at (replies are
+    /// one level deep, so replying to a reply joins its thread).
+    struct ChatRow: Encodable {
+        let message: ChatMessageDTO
+        let isReply: Bool
+        let threadID: String
+        let replyToName: String?
+        let isoTime: String
+        let fallbackTime: String
     }
 
     /// One `<option>`/radio in the create form. `isSelected` is
@@ -247,6 +313,10 @@ struct EventWebController: RouteCollection {
         authenticated.post("events", ":eventID", "cancel", use: cancel)
         authenticated.post("events", ":eventID", "join", use: join)
         authenticated.post("events", ":eventID", "leave", use: leave)
+        // Members only (review): each picture is billed, and a visitor
+        // can't be told apart behind a proxy. Visitors get the free
+        // "Open in Google Maps" link instead.
+        authenticated.get("events", ":eventID", "map.png", use: mapImage)
     }
 
     /// `/events`. A normal request renders the whole page; an htmx
@@ -542,16 +612,156 @@ struct EventWebController: RouteCollection {
         // call already made above for the event itself (M5 criteria #4/#5
         // reuse EventService.assertVisible via ChatService — see its own
         // doc comment) — no separate check needed here.
-        let chatMessages = try await ChatService(db: req.db).history(eventID: try event.requireID())
-        let chatHistory = try chatMessages.map { try $0.toDTO() }
+        // Members only (user's decision at the Event detail checkpoint):
+        // visitors get a sign-in box, and the messages aren't loaded.
+        var chatHistory: [ChatMessageDTO] = []
+        if user != nil {
+            let chatMessages = try await ChatService(db: req.db).history(eventID: try event.requireID())
+            chatHistory = try chatMessages.map { try $0.toDTO() }
+        }
+        let rows = Self.chatRows(chatHistory)
+        let groupRoles = try await Self.hostGroupRoles(for: event, on: req.db)
         return try await req.view.render("pages/event-detail", EventDetailPageContext(
             title: dto.title,
             event: dto,
             isSignedIn: user != nil,
             canManage: canManage,
-            chatHistory: chatHistory
+            chatHistory: chatHistory,
+            hero: DetailHero(imageURL: Self.imageURL(for: event.category), categoryLabel: event.category.rawValue.capitalized),
+            people: Self.people(for: event, dto: dto, requesterID: requesterID, groupRoles: groupRoles),
+            place: Self.place(for: event, canShowMap: user != nil),
+            chatRows: rows,
+            hasNoMessages: rows.isEmpty,
+            currentUserID: requesterID?.uuidString ?? ""
         ))
     }
+
+    /// `GET /events/:id/map.png`: the map picture for an event's venue (or
+    /// city), fetched from the provider with the server's key (user's
+    /// decision: the key never reaches the browser). Members only, and
+    /// only for events they can see that aren't cancelled; coordinates
+    /// come from the event, never the request, so nobody can draw other
+    /// maps on our key. Never stored (Google's terms); browsers may keep
+    /// it an hour. Each one is billed, so there's a limit per member and
+    /// one for the whole site.
+    @Sendable
+    func mapImage(req: Request) async throws -> Response {
+        let requesterID = try req.auth.require(User.self).requireID()
+        let event = try await eventOrNotFound(req)
+        try await EventService(db: req.db).assertVisible(event, to: requesterID)
+        guard !event.isCancelled, let point = Self.mapPoint(for: event) else { throw Abort(.notFound) }
+        guard await req.application.mapImageLimiter.allow(requesterID.uuidString),
+              await req.application.mapImageSiteLimiter.allow("site") else {
+            throw Abort(.tooManyRequests, reason: "Too many map requests. Try again in a minute.")
+        }
+        let image: StaticMapImage
+        do {
+            image = try await req.application.staticMaps.image(center: point, width: Self.mapWidth, height: Self.mapHeight)
+        } catch {
+            req.logger.warning("Map image failed: \(error)")
+            throw Abort(.badGateway, reason: "The map isn't available right now.")
+        }
+        var headers = HTTPHeaders()
+        headers.replaceOrAdd(name: .contentType, value: image.contentType)
+        headers.replaceOrAdd(name: .cacheControl, value: "private, max-age=3600")
+        headers.replaceOrAdd(name: "X-Content-Type-Options", value: "nosniff")
+        return Response(status: .ok, headers: headers, body: .init(data: image.data))
+    }
+
+    static let mapWidth = 640
+    static let mapHeight = 280
+
+    /// The venue's coordinates, or the city's when the venue has none;
+    /// nil when neither is set (events from before location lookup).
+    static func mapPoint(for event: Event) -> GeoCoordinate? {
+        let venue = GeoCoordinate(latitude: event.venueLat, longitude: event.venueLng)
+        if venue.isSet { return venue }
+        let city = GeoCoordinate(latitude: event.cityLat, longitude: event.cityLng)
+        return city.isSet ? city : nil
+    }
+
+    /// The map picture is offered to members on events that aren't
+    /// cancelled; the Google Maps link to anyone, whenever there are
+    /// coordinates.
+    static func place(for event: Event, canShowMap: Bool) -> DetailPlace {
+        let label = event.venueAddress.isEmpty ? event.cityAddress : event.venueAddress
+        guard let point = mapPoint(for: event), let id = event.id else {
+            return DetailPlace(label: label, hasMap: false, mapURL: "", directionsURL: nil)
+        }
+        // A plain Google Maps link: no key, opens the app on phones.
+        let query = String(format: "%.6f,%.6f", point.latitude, point.longitude)
+        return DetailPlace(label: label, hasMap: canShowMap && !event.isCancelled, mapURL: "/events/\(id.uuidString)/map.png",
+                           directionsURL: "https://www.google.com/maps/search/?api=1&query=\(query)")
+    }
+
+    /// The host, then everyone going (the requester tagged You, a host
+    /// who is going tagged Host).
+    static func people(for event: Event, dto: EventDTO, requesterID: UUID?,
+                       groupRoles: [UUID: GroupRole] = [:]) -> DetailPeople {
+        let hostURL: String?
+        if let hostUserID = dto.hostUserID {
+            hostURL = "/profile/\(hostUserID.uuidString)"
+        } else if let loaded = event.$hostGroup.value, let group = loaded {
+            hostURL = "/groups/\(group.slug)"
+        } else {
+            hostURL = nil
+        }
+        let host = PersonRow(name: dto.hostDisplayName, photoURL: dto.hostPhotoURL, profileURL: hostURL ?? "",
+                             isYou: dto.hostUserID != nil && dto.hostUserID == requesterID, isHost: true)
+        let rows = dto.attendees.map { attendee in
+            PersonRow(name: attendee.displayName, photoURL: attendee.photoURL,
+                      profileURL: "/profile/\(attendee.id.uuidString)",
+                      isYou: attendee.id == requesterID, isHost: attendee.id == dto.hostUserID,
+                      roleLabel: groupRoles[attendee.id].map { $0 == .owner ? "Owner" : "Moderator" })
+        }
+        let going = rows.count
+        return DetailPeople(hostURL: hostURL, hostIsGroup: dto.hostGroupID != nil, host: host,
+                            goingText: going == 0 ? "Going" : (going == 1 ? "1 person going" : "\(going) people going"),
+                            rows: rows, hasGoing: going > 0)
+    }
+
+    /// For a group's event: who among its members is owner or moderator.
+    static func hostGroupRoles(for event: Event, on db: Database) async throws -> [UUID: GroupRole] {
+        guard let groupID = event.$hostGroup.id else { return [:] }
+        let rows = try await GroupMembership.query(on: db)
+            .filter(\.$group.$id == groupID)
+            .filter(\.$role ~~ [.owner, .moderator])
+            .all()
+        return Dictionary(rows.map { ($0.$user.id, $0.role) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Chat messages for the page, each with the name it replies to.
+    static func chatRows(_ messages: [ChatMessageDTO]) -> [ChatRow] {
+        let names = Dictionary(messages.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
+        return messages.map { message in
+            chatRow(message, replyToName: message.parentID.flatMap { names[$0] })
+        }
+    }
+
+    static func chatRow(_ message: ChatMessageDTO, replyToName: String?) -> ChatRow {
+        ChatRow(message: message,
+                isReply: message.parentID != nil,
+                threadID: (message.parentID ?? message.id).uuidString,
+                replyToName: replyToName,
+                isoTime: chatTimeFormatter.string(from: message.createdAt),
+                fallbackTime: chatFallbackFormatter.string(from: message.createdAt))
+    }
+
+    /// Machine-readable times; the page shows them in the reader's own
+    /// zone (`js/event-chat.js`), with UTC text until it does.
+    static let chatTimeFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    static let chatFallbackFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "MMM d, HH:mm 'UTC'"
+        return formatter
+    }()
 
     @Sendable
     func newForm(req: Request) async throws -> View {
@@ -787,12 +997,15 @@ struct EventWebController: RouteCollection {
         let user = try req.auth.require(User.self)
         let requesterID = try user.requireID()
         let service = EventService(db: req.db)
-        let dto = try await service.fullDTO(for: event, requesterID: requesterID)
-        let canManage = (try? await service.assertCanManage(event, requesterID: requesterID)) != nil
+        let reloaded = try await service.find(try event.requireID()) ?? event
+        let dto = try await service.fullDTO(for: reloaded, requesterID: requesterID)
+        let canManage = (try? await service.assertCanManage(reloaded, requesterID: requesterID)) != nil
+        let groupRoles = try await Self.hostGroupRoles(for: reloaded, on: req.db)
         let view = try await req.view.render("partials/event-fragment", EventFragmentContext(
             event: dto,
             isSignedIn: true,
-            canManage: canManage
+            canManage: canManage,
+            people: Self.people(for: reloaded, dto: dto, requesterID: requesterID, groupRoles: groupRoles)
         ))
         return try await view.encodeResponse(for: req)
     }

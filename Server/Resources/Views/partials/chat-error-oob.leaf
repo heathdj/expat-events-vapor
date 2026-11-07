@@ -1,0 +1,1 @@
+<p id="chat-error" class="ed-chat-error" role="alert" hx-swap-oob="true">#(message)</p>
